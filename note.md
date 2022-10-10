@@ -183,7 +183,7 @@ E00516:621:H7KNHCCX2:2:1101:6005:3173   77      *       0       0       *       
 第三列：染色体名称
 第四列：POS，比对上的最左边的定位
 第五列：MAPQ，比对的质量值。越高说明比对的越唯一，最高60
-第六列：CIGAR Extended CIGAR string，M表示匹配、I表示插入、D表示删除、N表示内含子和D类似、S表示替换、H表示剪切。87M表示87个碱基在比对时完全匹配。
+第六列：CIGAR Extended CIGAR string，M表示匹配、I表示插入、D表示删除、N表示内含子和D类似、S表示替换、H表示剪切、X表示错配。87M表示87个碱基在比对时完全匹配。
 第七列：MRNM，这条reads第二次比对的位置，是比对上的参考序列名 。=表示参考序列与reads一模一样，*表示没有完全一模一样的参考序列。
 第八列：MPOS，与该reads对应的mate pair reads的比对位置（即mate），若无mate,则为0。
 第九列：ISIZE 插入片段长度 例如：200。如果R1端的read和R2端的read能够mapping到同一条Reference序列上（即第三列RNAME相同），则该列的值表示第8列减去第4列加上第6列的值，
@@ -234,6 +234,11 @@ NCCGCCACCTTCCC
 ## 4 一些工具
 ### 4.1 Bowtie2 简介
 序列别对工具，默认使用全局比对，reads 是完整的，看能比对上哪些reference
+```
+  Read:      GACTGGGCGATCTCGACTTCG
+             |||||  |||||||||| |||
+  Reference: GACTG--CGATCTCGACATCG
+```
 + eg
 ```bash
 bowtie2 -p "${THREAD}" -a -t \
