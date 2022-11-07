@@ -1,6 +1,7 @@
 # NJU-seq in *Arabidopsis thaliana*
 
 ## 1 Reference and index
+### 1.1 *Arabidopsis thaliana* reference genome
 + Download reference
 ```bash
 wget -N ftp://ftp.ensemblgenomes.org/pub/plants/release-46/fasta/arabidopsis_thaliana/dna/Arabidopsis_thaliana.TAIR10.dna.toplevel.fa.gz -O data/ath_dna.fa.gz
@@ -20,6 +21,45 @@ pigz -dc data/ath_transcript.fa.gz |
   --stdin -s 'transcript_biotype:protein_coding' \
   >data/ath_protein_coding.fa
 bowtie2-build data/ath_protein_coding.fa index/ath_protein_coding
+```
+
+### 1.2 Bacteria representative genome
++ Download
+```bash
+mkdir bacteria
+cd bacteria
+
+perl ~/Scripts/withncbi/taxon/assembly_prep.pl \
+    -f ./representative.assembly.tsv \
+    -o ASSEMBLY
+
+# Remove dirs not in the list
+find ASSEMBLY -maxdepth 1 -mindepth 1 -type d |
+    tr "/" "\t" |
+    cut -f 2 |
+    tsv-join --exclude -k 1 -f ASSEMBLY/rsync.tsv -d 1 |
+    parallel --no-run-if-empty --linebuffer -k -j 1 '
+        echo Remove {}
+        rm -fr ASSEMBLY/{}
+    '
+
+# Run
+bash ASSEMBLY/representative.assembly.rsync.sh
+bash ASSEMBLY/representative.assembly.collect.sh
+
+# md5
+cat ASSEMBLY/rsync.tsv |
+    tsv-select -f 1 |
+    parallel -j 4 --keep-order '
+        echo "==> {}"
+        cd ASSEMBLY/{}
+        md5sum --check md5checksums.txt
+    ' |
+    grep -v ": OK"
+```
++ Build index
+```bash
+
 ```
 
 ## 2 Data Selection and quality overview
