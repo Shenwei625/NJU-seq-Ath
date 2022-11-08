@@ -59,15 +59,23 @@ cat ASSEMBLY/rsync.tsv |
 ```
 + Build index
 ```bash
+# mRNA(*cds_from_genomic.fna.gz), tRNA and rRNA and ncRNA(*rna_from_genomic.fna.gz)
+parallel --linebuffer -k -j 4 '
+  echo "=====> {1}"
+  gzip -ckd {1}/*_cds_from_genomic.fna.gz >> bacteria_RNA.fa
+  gzip -ckd {1}/*_rna_from_genomic.fna.gz >> bacteria_RNA.fa
+' ::: $(find ASSEMBLY -maxdepth 1 -mindepth 1 -type d)
 
+# build index
+makie index
+bowtie2-build ./bacteria_RNA.fa index/bacteria_RNA
+# 出现问题：Warning: Encountered empty reference sequence
 ```
 
 ## 2 Data Selection and quality overview
++ Cut adapter and turn pair-end sequence data to single-end data
 ```bash
 # Select data for analysing
-ID='NJU6220'
-PREFIX='Ath_root_RF_NC'
-
 for PREFIX in Ath_root_RF_NC Ath_root_RF_1 Ath_root_RF_2 Ath_root_RF_3;do
 mkdir -p "data/${PREFIX}" "temp/${PREFIX}" "output/${PREFIX}" "raw_data/${PREFIX}"
 
@@ -77,24 +85,34 @@ cutadapt -O 6 -m 10 -e 0.1 --discard-untrimmed -j 16 \
 -A GATCGTCGGACTGTAGAACTCTGAACGTGTAGAT \
 -o data/${PREFIX}/R1.fq.gz \
 -p data/${PREFIX}/R2.fq.gz \
-raw_data/${PREFIX}/R1.fastq.gz \
-raw_data/${PREFIX}/R2.fastq.gz
+raw_data/${PREFIX}/R1.fq.gz \
+raw_data/${PREFIX}/R2.fq.gz
 
 # Quality control for clean data
 # Turn pair-end sequence data to single-end file
 perl NJU_seq/quality_control/pe_consistency.pl \
   data/"${PREFIX}"/R1.fq.gz data/"${PREFIX}"/R2.fq.gz \
-  temp/"${PREFIX}".fastq.gz
+  temp/"${PREFIX}".fq.gz
 done
 
-time perl NJU_seq/quality_control/fastq_qc.pl \
-  temp/Ath_root_RF_NC.fastq.gz \
-  temp/Ath_root_RF_1.fastq.gz \
-  temp/Ath_root_RF_2.fastq.gz \
-  temp/Ath_root_RF_3.fastq.gz \
-  output \
-  Ath_root_RF
+#time perl NJU_seq/quality_control/fastq_qc.pl \
+#  temp/Ath_root_RF_NC.fastq.gz \
+#  temp/Ath_root_RF_1.fastq.gz \
+#  temp/Ath_root_RF_2.fastq.gz \
+#  temp/Ath_root_RF_3.fastq.gz \
+#  output \
+#  Ath_root_RF
 ```
++ remove bacteria genome
+```bash
+# align
+
+
+
+# remove
+
+```
+
 
 ## 3 Alignment and Filter
 ```bash
