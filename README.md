@@ -60,16 +60,16 @@ cat ASSEMBLY/rsync.tsv |
 + Build index
 ```bash
 # mRNA(*cds_from_genomic.fna.gz), tRNA and rRNA and ncRNA(*rna_from_genomic.fna.gz)
-parallel --linebuffer -k -j 4 '
-  echo "=====> {1}"
-  gzip -ckd {1}/*_cds_from_genomic.fna.gz >> bacteria_RNA.fa
-  gzip -ckd {1}/*_rna_from_genomic.fna.gz >> bacteria_RNA.fa
-' ::: $(find ASSEMBLY -maxdepth 1 -mindepth 1 -type d)
-
+JOB=$(find ASSEMBLY -maxdepth 1 -mindepth 1 -type d)
+for i in $JOB;do
+  echo "=====>$i"
+  gzip -ckd $i/*_cds_from_genomic.fna.gz >> bacteria_RNA.fa
+  gzip -ckd $i/*_rna_from_genomic.fna.gz >> bacteria_RNA.fa
+done
+# quality_control(去除含有N较多的序列)???
 # build index
 makie index
 bowtie2-build ./bacteria_RNA.fa index/bacteria_RNA
-# 出现问题：Warning: Encountered empty reference sequence
 ```
 
 ## 2 Data Selection and quality overview
@@ -105,11 +105,29 @@ done
 ```
 + remove bacteria genome
 ```bash
+mkdir -P output/${PREFIX}
 # align
-
-
+time bowtie2 -p "${THREAD}" -a -t \
+  --end-to-end -D 20 -R 3 \
+  -N 0 -L 10 -i S,1,0.50 --np 0 \
+  --xeq -x index/Aca_marina_MBIC11017_GCF_000018105_1 \
+  -1 ../data/"${PREFIX}"/R1.fq.gz -2 ../data/"${PREFIX}"/R2.fq.gz \
+  -S output/"${PREFIX}"/bacteria_align.sam \
+  2>&1 |
+  tee output/"${PREFIX}"/bacteria.bowtie2.log
+# 出现问题(ERR): bowtie2-align exited with value 137，内存不够？？
+# 用单个基因组进行比对，可以，不过耗时较长
 
 # remove
+cat bacteria_align.sam |
+  grep -v "@" |
+  parallel --pipe --block 10M --no-run-if-empty --linebuffer --keep-order -j "${THREAD}" '
+    awk '\''$6!="*"&&$7=="="{print $1 "\t" $6}
+    '\'' |
+    perl ../../script/align_filter.pl 
+  ' | uniq > filter_name.tsv
+
+
 
 ```
 
