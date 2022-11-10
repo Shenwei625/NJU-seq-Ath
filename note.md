@@ -162,7 +162,7 @@ time pigz -dcf output/"${PREFIX}"/rrna.raw.sam.gz |
 
 
 ## 3 文件格式
-### 3.1 Samtools 文件简介
+### 3.1 Sam 文件简介
 + eg
 ```
 @HD     VN:1.5  SO:unsorted     GO:query
@@ -170,11 +170,10 @@ time pigz -dcf output/"${PREFIX}"/rrna.raw.sam.gz |
 @SQ     SN:28s  LN:5035
 @SQ     SN:5-8s LN:157
 @PG     ID:bowtie2      PN:bowtie2      VN:2.4.5        CL:"/home/linuxbrew/.linuxbrew/bin/../Cellar/bowtie2/2.4.5/bin/bowtie2-align-s --wrapper basic-0 -p 16 -a -t --end-to-end -D 20 -R 3 -N 0 -L 10 -i S,1,0.50 --np 0 --xeq -x index/hsa_rrna -S output/HeLa_RF_NC/rrna.raw.sam -1 data/HeLa_RF_NC/R1.fq.gz -2 data/HeLa_RF_NC/R2.fq.gz"
-E00516:621:H7KNHCCX2:2:1101:5375:3173   77      *       0       0       *       *       0       0       ATAGTCGATGGACAACAGGTTAGCG       AAFFFJJJJJJJJJJJJJJJJJJJJ       YT:Z:UP
-E00516:621:H7KNHCCX2:2:1101:5375:3173   141     *       0       0       *       *       0       0       CGCTAACCTGTTGTCCATCGACTAT       AAFFFJJJJJJJJJJJJJJJJJJJJ       YT:Z:UP
-E00516:621:H7KNHCCX2:2:1101:5720:3173   77      *       0       0       *       *       0       0       CTGACGGATGCCTTGGCACTGAGAGGCGATGAAGGACGTG        AAFFFJJJJJJJJJFJJJJJJJJJJJJJJJJJJJJJJJFJ        YT:Z:UP
-E00516:621:H7KNHCCX2:2:1101:5720:3173   141     *       0       0       *       *       0       0       CACGTCCTTCATCGCCTCTCAGTGCCAAGGCATCCGTCAG        <AFFFJJJJJJJJJJJ<JFJJJJFJJJJJJJJJJJJJJJJ        YT:Z:UP
-E00516:621:H7KNHCCX2:2:1101:6005:3173   77      *       0       0       *       *       0       0       GGGAACAGTACTCA AAFFFJJJJJJJJJ   YT:Z:UP
+E00517:615:HCJYHCCX2:3:1101:6877:1555   99      18s     1123    255     1X20=   =       1123    21      NCAAGGCTGAAACTTAAAGGA   #AAFFJJJJJJJJJJJJJJJJ    AS:i:0  XN:i:0  XM:i:1  XO:i:0  XG:i:0  NM:i:1  MD:Z:0G20       YS:i:0  YT:Z:CP
+E00517:615:HCJYHCCX2:3:1101:6877:1555   147     18s     1123    255     4=1X16= =       1123    -21     GCAANGCTGAAACTTAAAGGA   JJJJ#JJJFJJJJJJJFFFAA    AS:i:0  XN:i:0  XM:i:1  XO:i:0  XG:i:0  NM:i:1  MD:Z:4G16       YS:i:0  YT:Z:CP
+E00517:615:HCJYHCCX2:3:1101:7344:1555   77      *       0       0       *       *       0       0       NGCGGTGAAATGCGTAG       #AAFFJJJJJJJJJJJJ        YT:Z:UP
+E00517:615:HCJYHCCX2:3:1101:7344:1555   141     *       0       0       *       *       0       0       CTACGCATTTCACCGCN       AAFFFJJJJJJJJJJJ#        YT:Z:UP
 
 头部区：以'@'开始，体现了比对的一些总体信息。比如比对的SAM格式版本，比对的参考序列，比对使用的软件等。
 主体区：比对结果，每一个比对结果是一行，有11个主列和一个可选列。
@@ -182,7 +181,7 @@ E00516:621:H7KNHCCX2:2:1101:6005:3173   77      *       0       0       *       
 第二列：FLAG，比对上的情况
 第三列：染色体名称
 第四列：POS，比对上的最左边的定位
-第五列：MAPQ，比对的质量值。越高说明比对的越唯一，最高60
+第五列：MAPQ，比对的质量值。
 第六列：CIGAR Extended CIGAR string，M表示匹配、I表示插入、D表示删除、N表示内含子和D类似、S表示替换、H表示剪切、X表示错配。87M表示87个碱基在比对时完全匹配。
 第七列：MRNM，这条reads第二次比对的位置，是比对上的参考序列名 。=表示参考序列与reads一模一样，*表示没有完全一模一样的参考序列。
 第八列：MPOS，与该reads对应的mate pair reads的比对位置（即mate），若无mate,则为0。
@@ -192,7 +191,11 @@ E00516:621:H7KNHCCX2:2:1101:6005:3173   77      *       0       0       *       
 ```
 
 ### 3.2 Fastq 文件格式信息（以二代测序为例）
-4行为1个单位，第一行是@开头的解释信息，第二行是序列reads，第三行+开头的信息，第四行是对应的测序质量ASCII码
+4行为1个单位
+第一行是@开头的解释信息，是这一条read的名字，这个字符串是根据测序时的状态信息转换过来的，中间不会有空格，它是每一条read的唯一标识符，同一份FASTQ文件中不会重复出现，甚至不同的FASTQ文件里也不会有重复；
+第二行是序列reads
+第三行+开头的信息，在旧版的FASTQ文件中会直接重复第一行的信息，但现在一般什么也不加（节省存储空间）
+第四行是对应的测序质量ASCII码
 + eg
 ```
 @E00516:621:H7KNHCCX2:2:1101:1864:3173 2:N:0:ATGTCAAT+AAAGATAA
@@ -251,7 +254,7 @@ bowtie2 -p "${THREAD}" -a -t \
 # -p:number of alignment threads to launch
 # -a:report all alignments; very slow, 输出所有比对结果
 # -t:print wall-clock time taken by search phases
-# --end-to-end:entire read must align; no clipping (on), 完全匹配
+# --end-to-end:entire read must align; no clipping (on)
 # -D:give up extending after <int> failed extends in a row (15),比对时,将一个种子延长后得到比对结果,如果不产生更好的或次好的比对结果,则该次比对失败.当失败次数连续达到次后,则该条read比对结束. Bowtie2才会继续进行下去
 # -R:for reads w/ repetitive seeds, try <int> sets of seeds (2),如果一个read所生成的种子在参考序列上匹配位点过多.当每个种子平均匹配超过300个位置,则通过一个不同的偏移来重新生成种子进行比对. 则是重新生成种子的次数
 # -N:max # mismatches in seed alignment; can be 0 or 1 (0)
