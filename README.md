@@ -59,17 +59,31 @@ cat ASSEMBLY/rsync.tsv |
 ```
 + Build index
 ```bash
-# mRNA(*cds_from_genomic.fna.gz), tRNA and rRNA and ncRNA(*rna_from_genomic.fna.gz)
+# tRNA and rRNA and ncRNA(*rna_from_genomic.fna.gz)
 JOB=$(find ASSEMBLY -maxdepth 1 -mindepth 1 -type d)
 for i in $JOB;do
   echo "=====>$i"
-  gzip -ckd $i/*_cds_from_genomic.fna.gz >> bacteria_RNA.fa
   gzip -ckd $i/*_rna_from_genomic.fna.gz >> bacteria_RNA.fa
 done
-# quality_control(去除含有N较多的序列)???
+
+# rRNA
+for i in $JOB;do
+  echo "=====>$i"
+  gzip -ckd $i/*_rna_from_genomic.fna.gz |
+    perl ../NJU_seq/tool/fetch_fasta.pl --stdin -s 'rRNA' >> bacteria_rRNA.fa
+done
+
+# quality_control(去除含有N的序列)
+perl script/remove_sequence_with_N.pl bacteria_RNA.fa > tem&&
+  mv tem bacteria_RNA.fa
+
+perl script/remove_sequence_with_N.pl bacteria_rRNA.fa > tem&&
+  mv tem bacteria_rRNA.fa
+
 # build index
 makie index
 bowtie2-build ./bacteria_RNA.fa index/bacteria_RNA
+bowtie2-build ./bacteria_rRNA.fa index/bacteria_rRNA
 ```
 
 ## 2 Data Selection and quality overview
@@ -105,30 +119,47 @@ done
 ```
 + remove bacteria genome
 ```bash
-mkdir -P output/${PREFIX}
-# align
-time bowtie2 -p "${THREAD}" -a -t \
-  --end-to-end -D 20 -R 3 \
-  -N 0 -L 10 -i S,1,0.50 --np 0 \
-  --xeq -x index/Aca_marina_MBIC11017_GCF_000018105_1 \
-  -1 ../data/"${PREFIX}"/R1.fq.gz -2 ../data/"${PREFIX}"/R2.fq.gz \
-  -S output/"${PREFIX}"/bacteria_align.sam \
-  2>&1 |
-  tee output/"${PREFIX}"/bacteria.bowtie2.log
-# 出现问题(ERR): bowtie2-align exited with value 137，内存不够？？
-# 用单个基因组进行比对，可以，不过耗时较长
+for TISSUE in flower leaf root stem;do
+  for PREFIX in Ath_${TISSUE}_NC Ath_${TISSUE}_1 Ath_${TISSUE}_2 Ath_${TISSUE}_3;do
+    mkdir -p output/${PREFIX}
+    THREAD=24
+
+    # align
+    time bowtie2 -p "${THREAD}" -a -t \
+      --end-to-end -D 20 -R 3 \
+      -N 0 -L 10 -i S,1,0.50 --np 0 \
+      --xeq -x index/bacteria_rRNA \
+      -1 ../data/"${PREFIX}"/R1.fq.gz -2 ../data/"${PREFIX}"/R2.fq.gz \
+      -S output2/"${PREFIX}"/bacteria_align.sam \
+      2>&1 |
+      tee output2/"${PREFIX}"/bacteria.bowtie2.log
+
+    time pigz -p "${THREAD}" output/"${PREFIX}"/bacteria_align.sam
+  done
+done
 
 # remove
-cat bacteria_align.sam |
-  grep -v "@" |
-  parallel --pipe --block 10M --no-run-if-empty --linebuffer --keep-order -j "${THREAD}" '
-    awk '\''$6!="*"&&$7=="="{print $1 "\t" $6}
-    '\'' |
-    perl ../../script/align_filter.pl 
-  ' | uniq > filter_name.tsv
+for TISSUE in flower leaf root stem;do
+    for PREFIX in Ath_${TISSUE}_NC Ath_${TISSUE}_1 Ath_${TISSUE}_2 Ath_${TISSUE}_3;do
+      THREAD=24
+
+      pigz -dcf output/"${PREFIX}"/bacteria_align.sam.gz  |
+        grep -v "@" |
+        parallel --pipe --block 10M --no-run-if-empty --linebuffer --keep-order -j "${THREAD}" '
+          awk '\''$6!="*"&&$7=="="{print $1 "\t" $6}
+          '\'' |
+          perl script/align_filter.pl 
+        ' | uniq > output/${PREFIX}/filter_name.tsv
 
 
+  done
+done
 
+find job_list -maxdepth 1 -mindepth 1 -type f |
+  parallel --linebuffer -k -j 4 "
+    echo >&2 '====> {1}'
+    perl script/remove_select_reads.pl -r {1} -f output/${PREFIX}/filter_name.tsv
+  " > output/${PREFIX}/test.fastq
 ```
 
 
