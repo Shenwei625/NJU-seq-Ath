@@ -66,24 +66,14 @@ for i in $JOB;do
   gzip -ckd $i/*_rna_from_genomic.fna.gz >> bacteria_RNA.fa
 done
 
-# rRNA
-for i in $JOB;do
-  echo "=====>$i"
-  gzip -ckd $i/*_rna_from_genomic.fna.gz |
-    perl ../NJU_seq/tool/fetch_fasta.pl --stdin -s 'rRNA' >> bacteria_rRNA.fa
-done
-
 # quality_control(去除含有N的序列)
 perl script/remove_sequence_with_N.pl bacteria_RNA.fa > tem&&
   mv tem bacteria_RNA.fa
 
-perl script/remove_sequence_with_N.pl bacteria_rRNA.fa > tem&&
-  mv tem bacteria_rRNA.fa
-
 # build index
 makie index
-bowtie2-build ./bacteria_RNA.fa index/bacteria_RNA
-bowtie2-build ./bacteria_rRNA.fa index/bacteria_rRNA
+bowtie2-build --threads 8 ./bacteria_RNA.fa index/bacteria_RNA
+rm bacteria_RNA.fa
 ```
 
 ## 2 Data Selection and quality overview
@@ -130,9 +120,9 @@ for TISSUE in flower leaf root stem;do
       -N 0 -L 10 -i S,1,0.50 --np 0 \
       --xeq -x index/bacteria_rRNA \
       -1 ../data/"${PREFIX}"/R1.fq.gz -2 ../data/"${PREFIX}"/R2.fq.gz \
-      -S output2/"${PREFIX}"/bacteria_align.sam \
+      -S output/"${PREFIX}"/bacteria_align.sam \
       2>&1 |
-      tee output2/"${PREFIX}"/bacteria.bowtie2.log
+      tee output/"${PREFIX}"/bacteria.bowtie2.log
 
     time pigz -p "${THREAD}" output/"${PREFIX}"/bacteria_align.sam
   done
@@ -143,23 +133,34 @@ for TISSUE in flower leaf root stem;do
     for PREFIX in Ath_${TISSUE}_NC Ath_${TISSUE}_1 Ath_${TISSUE}_2 Ath_${TISSUE}_3;do
       THREAD=24
 
-      pigz -dcf output/"${PREFIX}"/bacteria_align.sam.gz  |
+      time pigz -dcf output/"${PREFIX}"/bacteria_align.sam.gz |
         grep -v "@" |
         parallel --pipe --block 10M --no-run-if-empty --linebuffer --keep-order -j "${THREAD}" '
           awk '\''$6!="*"&&$7=="="{print $1 "\t" $6}
           '\'' |
           perl script/align_filter.pl 
         ' | uniq > output/${PREFIX}/filter_name.tsv
-
-
   done
 done
 
-find job_list -maxdepth 1 -mindepth 1 -type f |
-  parallel --linebuffer -k -j 4 "
-    echo >&2 '====> {1}'
-    perl script/remove_select_reads.pl -r {1} -f output/${PREFIX}/filter_name.tsv
-  " > output/${PREFIX}/test.fastq
+makdir JOB
+pigz -dcf ../data/"${PREFIX}"/R1.fq.gz | 
+  split -l 10000000 -a 3 -d - JOB/
+
+time find JOB -maxdepth 1 -mindepth 1 -type f | 
+  parallel -j 12 -k --line-buffer "
+    echo '===>{1}'
+    i=$(basename {1})
+    perl script/remove_select_reads.pl -r {1} -f output/${PREFIX}/filter_name.tsv >> test.fastq
+  "
+time pigz -p "${THREAD}" test.fastq
+```
+
+## 4 Statistics
+```bash
+mkdir statistics
+
+
 ```
 
 
@@ -206,4 +207,3 @@ time pigz -dcf output/"${PREFIX}"/rrna.raw.sam.gz |
 # multimatch_judge.pl ：
 # 一个reads如果只有一种匹配,则直接输出,如果有多种匹配,有完全匹配的就输出完全匹配,没有完全匹配的就输出匹配长度最长的那种
 ```
-
