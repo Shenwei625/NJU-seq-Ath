@@ -20,6 +20,11 @@ open( my $remove_fh1, "<", $ARGV[1] );
 open( my $out_fh, ">", $ARGV[2] );
 open( my $out_fh2, ">", $ARGV[3] );
 
+my $dirname;
+if ( $ARGV[2] =~ /(.+)\/reads_info.tsv/) {
+    $dirname = $1;
+}
+
 my @total_reads;
 while (<$raw_fh1>) {
     chomp;
@@ -42,37 +47,32 @@ foreach ( @total_reads ) {
     }
 }
 
-my $remove_proportion = ( $remove_reads_number / $total_reads_number );
-my $remove_proportion_print = `printf "%.3f%%" $remove_proportion`;
-print $out_fh2 ("total_reads_number\tmatch_reads_number\tmatch_proportion\n");
-print $out_fh2 ("$total_reads_number\t$remove_reads_number\t$remove_proportion_print\n");
+select $out_fh2;
+my $remove_proportion =( ( $remove_reads_number / $total_reads_number ) * 100 );
+print "total_reads_number\tmatch_reads_number\tmatch_proportion\n";
+print "$total_reads_number\t$remove_reads_number\t";
+printf "%.2f%%\n", $remove_proportion;
 
-
+select $out_fh;
 # reads information
 my $i = 0;
 my @discard_reads;
-print $out_fh ("reads_name\treads_sequence\treads_length\tCG_content\n");
-while ( $i <= $#total_reads ) {
+print "reads_name\treads_sequence\treads_length\tCG_content\n";
+foreach ( @remove_name ) {
     my $reads_name;
-    if ( $total_reads[$i] =~ /^@(\S+)/ ) {
+    my $reads_seq;
+    if ( /^(\S+)\t(\S+)/ ) {
         $reads_name = $1;
-        $i++; # reads sequence
+        $reads_seq = $2;
     }
-    my $reads_seq = $total_reads[$i];
-    $i++; # info
-    $i++; # quality
-    $i++;
     my $reads_length = length($reads_seq);
 
     my $C_count = $reads_seq =~ tr/C/C/;
     my $G_count = $reads_seq =~ tr/G/G/;
     my $CG_count = ( ( $C_count + $G_count ) / $reads_length );
-#    my $CG_print = `printf "%.2f%%" $CG_count`;
- 
-    print $out_fh ("$reads_name\t$reads_seq\t$reads_length\t$CG_count\n")
+
+    print "$reads_name\t$reads_seq\t$reads_length\t$CG_count\n";
 }
 
-system(
-    "cat $ARGV[2] | grep -w -f $ARGV[1] > tem&&
-        mv tem $ARGV[2]"
-)
+
+__END__
