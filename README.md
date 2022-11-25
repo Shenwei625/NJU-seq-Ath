@@ -98,67 +98,113 @@ perl NJU_seq/quality_control/pe_consistency.pl \
   data/"${PREFIX}"/R1.fq.gz data/"${PREFIX}"/R2.fq.gz \
   temp/"${PREFIX}".fq.gz
 done
-
-#time perl NJU_seq/quality_control/fastq_qc.pl \
-#  temp/Ath_root_RF_NC.fastq.gz \
-#  temp/Ath_root_RF_1.fastq.gz \
-#  temp/Ath_root_RF_2.fastq.gz \
-#  temp/Ath_root_RF_3.fastq.gz \
-#  output \
-#  Ath_root_RF
-```
-+ remove bacteria genome
-```bash
-for TISSUE in flower leaf root stem;do
-  for PREFIX in Ath_${TISSUE}_NC Ath_${TISSUE}_1 Ath_${TISSUE}_2 Ath_${TISSUE}_3;do
-    mkdir -p output/${PREFIX}
-    THREAD=24
-
-    # align
-    time bowtie2 -p "${THREAD}" -a -t \
-      --end-to-end -D 20 -R 3 \
-      -N 0 -L 10 -i S,1,0.50 --np 0 \
-      --xeq -x index/bacteria_rRNA \
-      -1 ../data/"${PREFIX}"/R1.fq.gz -2 ../data/"${PREFIX}"/R2.fq.gz \
-      -S output/"${PREFIX}"/bacteria_align.sam \
-      2>&1 |
-      tee output/"${PREFIX}"/bacteria.bowtie2.log
-
-    time pigz -p "${THREAD}" output/"${PREFIX}"/bacteria_align.sam
-  done
-done
-
-# remove
-for TISSUE in flower leaf root stem;do
-    for PREFIX in Ath_${TISSUE}_NC Ath_${TISSUE}_1 Ath_${TISSUE}_2 Ath_${TISSUE}_3;do
-      THREAD=24
-
-      time pigz -dcf output/"${PREFIX}"/bacteria_align.sam.gz |
-        grep -v "@" |
-        parallel --pipe --block 10M --no-run-if-empty --linebuffer --keep-order -j "${THREAD}" '
-          awk '\''$6!="*"&&$7=="="{print $1 "\t" $6}
-          '\'' |
-          perl script/align_filter.pl 
-        ' | uniq > output/${PREFIX}/filter_name.tsv
-  done
-done
-
-makdir JOB
-pigz -dcf ../data/"${PREFIX}"/R1.fq.gz | 
-  split -l 10000000 -a 3 -d - JOB/
-
-time find JOB -maxdepth 1 -mindepth 1 -type f | 
-  parallel -j 12 -k --line-buffer "
-    echo '===>{1}'
-    i=$(basename {1})
-    perl script/remove_select_reads.pl -r {1} -f output/${PREFIX}/filter_name.tsv >> test.fastq
-  "
-time pigz -p "${THREAD}" test.fastq
 ```
 
-## 4 Statistics
++ raw sequence file statistics
 ```bash
-mkdir statistics
+JOB=$(find data -maxdepth 1 -mindepth 1 -type d)
+
+for J in $JOB;do
+  echo "===> $J"
+
+  pigz -dcf $J/R1.fq.gz | perl -e'
+  while (<>) {
+    chomp( my $seq_name = $_ );
+    chomp( my $seq = <> );
+    my $seq_length = length($seq);
+    chomp( my $info = <> );
+    chomp( my $quality = <> );
+    print "$seq_length\n";
+  }
+' | sort -n | uniq -c | perl -ne'
+      s/^\s+//;
+      print "$_";
+    ' | tr " " "\t" | tsv-select --fields 2,1 > $J/length_distribution.tsv
+  
+  (echo -e "reads_length\tTotal_number" && cat $J/length_distribution.tsv) > tem&&
+    mv tem $J/length_distribution.tsv
+done
+```
+
+### 2.1 1331种物种代表性菌株一一匹配
+```bash
+bash script/bacteria_align.sh
+bash script/statistics.sh
+bash script/merge_plot.sh
+
+# sort and merge
+cd bacteria
+cat output/${PREFIX}/align_statistics.tsv | keep-header -- sort -nr -k4,4 > tem&&
+  mv tem output/${PREFIX}/align_statistics.tsv
+
+tsv-join --filter-file <(cut -d "," -f 1,2 Bacteria.assembly.collect.csv | tr "," "\t") -H --key-fields name --append-fields Organism_name output/${PREFIX}/align_statistics.tsv | 
+tsv-select -H -f Organism_name --rest last > tem&&
+  mv tem output/${PREFIX}/align_statistics.tsv
+
+cat output/${PREFIX}/$J/reads_info.tsv >> output/${PREFIX}/total_remove_reads_info.tsv
+cat output/${PREFIX}/total_remove_reads_info.tsv | sort | uniq > tem&&
+  mv tem output/${PREFIX}/total_remove_reads_info.tsv
+
+cut -f 3 output/${PREFIX}/total_remove_reads_info.tsv | 
+  sort -n | uniq -c |
+  perl -ne'
+    s/^\s+//;
+    print "$_";
+  ' |
+  tr " " "\t" | tsv-select --fields 2,1 > output/${PREFIX}/length_distribution.tsv
+
+(echo -e "reads_length\tRemove_number" && cat output/${PREFIX}/length_distribution.tsv) > tem&&
+  mv tem output/${PREFIX}/length_distribution.tsv 
+
+# plot
+cd NJU_seq_analysis_ath
+tsv-join -H --filter-file bacteria/output/${PREFIX}/length_distribution.tsv --key-fields reads_length --append-fields Remove_number data/${PREFIX}/length_distribution.tsv
+
+perl bacteria/script/tsv_join_plus.pl data/${PREFIX}/length_distribution.tsv bacteria/output/${PREFIX}/length_distribution.tsv > tem&&
+  mv tem data/${PREFIX}/length_distribution.tsv
+
+echo -e "reads_length\tnumber\tgroup" > data/${PREFIX}/plot.tsv
+sed '1d' data/${PREFIX}/length_distribution.tsv | perl -ne'
+  chomp;
+  if (/^(\S+)\t(\S+)\t(\S+)/) {
+    my $reads_length = $1;
+    my $total_number = $2;
+    my $remove_number = $3;
+    my $keep_number = ( $total_number - $remove_number );
+    print "$reads_length\t$keep_number\tKeep\n";
+    print "$reads_length\t$remove_number\tRemove\n";
+  }
+' >> data/${PREFIX}/plot.tsv
+```
+```R
+library("ggplot2")
+DATA <- read.table("plot.tsv", header = TRUE, sep = "\t")
+
+ggplot(DATA, aes(reads_length, number, fill=group)) +
+  geom_bar(stat = "identity")+
+  xlim(9,60)+
+  theme(text=element_text(face = "bold"), axis.text=element_text(face = "bold"))
+```
+
++ remove
+```bash
+pigz -dcf R1.fq.gz | grep "@" | grep -v -w -f discard.tsv > keep.tsv
+pigz -dcf R1.fq.gz | 
+  grep -A3 -w -f keep.tsv | 
+  perl -ne'
+    if ( ! (/^--$/) ) {
+      print "$_";
+    }
+  ' > R1_filter.fq
+
+pigz -p "${THREAD}" R1_filter.fq
+```
+
+### 2.2 与rRNA恒定区匹配
+**细菌的16SrDNA中有多个区段保守性，根据这些保守区可以设计出细菌通用物，可以扩增出所有细菌的16SrDNA片段，并且这些引物仅对细菌是特异性的，也就是说这些引物不会与非细菌的DNA互补**
+```bash
+mkdir -p silva
+
 
 
 ```
