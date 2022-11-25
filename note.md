@@ -186,7 +186,7 @@ E00517:615:HCJYHCCX2:3:1101:7344:1555   141     *       0       0       *       
 第七列：MRNM，这条reads第二次比对的位置，是比对上的参考序列名 。=表示参考序列与reads一模一样，*表示没有完全一模一样的参考序列。
 第八列：MPOS，与该reads对应的mate pair reads的比对位置（即mate），若无mate,则为0。
 第九列：ISIZE 插入片段长度 例如：200。如果R1端的read和R2端的read能够mapping到同一条Reference序列上（即第三列RNAME相同），则该列的值表示第8列减去第4列加上第6列的值，
-第十列：SEQ，和参考序列在同一个链上比对的序列，即read的序列。
+第十列：SEQ，和参考序列在同一个链上比对的序列。
 第十一列：比对序列的质量（ASCII-33=Phred base quality）reads碱基质量值
 ```
 
