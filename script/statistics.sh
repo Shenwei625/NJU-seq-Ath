@@ -1,17 +1,17 @@
 #! usr/bin/bash
-PREFIX=Ath_root_NC
+PREFIX=Ath_flower_NC
 
-JOB=$(ls output/${PREFIX} | sort -r)
-for J in $JOB;do
-  echo "====>$J"
+ls ./output/${PREFIX} |
+  parallel -j 24 --linebuffer '
+  echo "====> {1}"
 
-  pigz -dcf output/${PREFIX}/$J/${J}_align.sam.gz |
+  pigz -dcf ./output/Ath_flower_NC/{1}/{1}_align.sam.gz |
         grep -v "@" |
         tsv-filter --regex '6:^[0-9]+=$' |
         tsv-filter --str-eq 7:= |
-        cut -f 1 | uniq > output/${PREFIX}/$J/${J}_match.tsv
+        cut -f 1,10 | uniq > ./output/Ath_flower_NC/{1}/{1}_match.tsv
 
-  perl script/pre_remove_statistics.pl ../data/Ath_root_NC/R1.fq.gz output/${PREFIX}/$J/${J}_match.tsv \
-  output/${PREFIX}/$J/reads_info.tsv \
-  output/${PREFIX}/$J/remove_info.tsv
-done
+  perl script/pre_remove_statistics.pl ../data/Ath_flower_NC/R1.fq.gz output/Ath_flower_NC/{1}/{1}_match.tsv \
+  output/Ath_flower_NC/{1}/reads_info.tsv \
+  output/Ath_flower_NC/{1}/remove_info.tsv
+'
