@@ -60,20 +60,13 @@ cat ASSEMBLY/rsync.tsv |
 + Build index
 ```bash
 # tRNA and rRNA and ncRNA(*rna_from_genomic.fna.gz)
-JOB=$(find ASSEMBLY -maxdepth 1 -mindepth 1 -type d)
-for i in $JOB;do
-  echo "=====>$i"
-  gzip -ckd $i/*_rna_from_genomic.fna.gz >> bacteria_RNA.fa
-done
-
-# quality_control(去除含有N的序列)
-perl script/remove_sequence_with_N.pl bacteria_RNA.fa > tem&&
-  mv tem bacteria_RNA.fa
-
-# build index
-makie index
-bowtie2-build --threads 8 ./bacteria_RNA.fa index/bacteria_RNA
-rm bacteria_RNA.fa
+find ASSEMBLY -maxdepth 1 -mindepth 1 -type d |
+  cut -d "/" -f 2 |
+  parallel -j 24 --keep-order "
+    echo '===>index_{1}'
+    makdir -p index/{1}
+    bowtie2-build ASSEMBLY/{1}/*_rna_from_genomic.fna.gz index/{1}/{1} 
+  "
 ```
 
 ## 2 Data Selection and quality overview
@@ -212,76 +205,10 @@ done
 **细菌的16SrDNA中有多个区段保守性，根据这些保守区可以设计出细菌通用物，可以扩增出所有细菌的16SrDNA片段，并且这些引物仅对细菌是特异性的，也就是说这些引物不会与非细菌的DNA互补**
 ```bash
 mkdir -p silva
-wget https://www.arb-silva.de/fileadmin/silva_databases/release_138.1/Exports/SILVA_138.1_SSURef_NR99_tax_silva_trunc.fasta.gz -O ./silva/SILVA_138.1_SSURef_NR99_tax_silva_trunc.fasta.gz
-wget https://www.arb-silva.de/fileadmin/silva_databases/release_138.1/Exports/SILVA_138.1_LSURef_NR99_tax_silva_trunc.fasta.gz -O ./silva/SILVA_138.1_LSURef_NR99_tax_silva_trunc.fasta.gz
-
-pigz -dcf silva/SILVA_138.1_SSURef_NR99_tax_silva_trunc.fasta.gz | grep ">" | perl -ne'
-  if (/\sBacteria;/) {
-    print "$_";
-  }' | sed 's/^>//g' > silva/bacteria_SSU.lst
-# 431575
-pigz -dcf silva/SILVA_138.1_SSURef_NR99_tax_silva_trunc.fasta.gz | faops some stdin silva/bacteria_SSU.lst silva/bacteria_SSU.fa
-
-pigz -dcf silva/SILVA_138.1_LSURef_NR99_tax_silva_trunc.fasta.gz | grep ">" | perl -ne'
-  if (/\sBacteria;/) {
-    print "$_";
-  }' | sed 's/^>//g' > silva/bacteria_LSU.lst
-# 78144
-pigz -dcf silva/SILVA_138.1_LSURef_NR99_tax_silva_trunc.fasta.gz | faops some stdin silva/bacteria_LSU.lst silva/bacteria_LSU.fa
-
-cat silva/bacteria_SSU.fa |
-  perl -ne'
-    if (/^>/) {
-      print "$_";
-    }else {
-      s/U/T/g;
-      print "$_";
-    }
-  ' > tem&&
-mv tem silva/bacteria_SSU.fa
-
-cat silva/bacteria_LSU.fa |
-  perl -ne'
-    if (/^>/) {
-      print "$_";
-    }else {
-      s/U/T/g;
-      print "$_";
-    }
-  ' > tem&&
-mv tem silva/bacteria_LSU.fa
-
-# index
-mkdir -p index/SSU index/LSU
-bowtie2-build --threads 8 silva/bacteria_SSU.fa index/SSU/SSU
-bowtie2-build --threads 8 silva/bacteria_LSU.fa index/LSU/LSU
-
-# align
-mkdir -p output/Ath_root_NC/SSU output/Ath_root_NC/LSU
-
-bsub -q mpi -n 24 -J "LSU" "
-  bowtie2 -p 20 -a -t \
-  --end-to-end -D 20 -R 3 \
-  -N 0 -L 10 -i S,1,0.50 --np 0 \
-  --xeq -x index/LSU/LSU \
-  -1 ../data/Ath_root_NC/R1.fq.gz -2 ../data/Ath_root_NC/R2.fq.gz \
-  -S output/Ath_root_NC/LSU/LSU_align.sam \
-  2>&1 |
-  tee output/Ath_root_NC/LSU/LSU.bowtie2.log
-"
-
-bsub -q mpi -n 24 -J "SSU" "
-  bowtie2 -p 20 -a -t \
-  --end-to-end -D 20 -R 3 \
-  -N 0 -L 10 -i S,1,0.50 --np 0 \
-  --xeq -x index/SSU/SSU \
-  -1 ../data/Ath_root_NC/R1.fq.gz -2 ../data/Ath_root_NC/R2.fq.gz \
-  -S output/Ath_root_NC/SSU/SSU_align.sam \
-  2>&1 |
-  tee output/Ath_root_NC/SSU/SSU.bowtie2.log
-"
+wget https://www.arb-silva.de/fileadmin/silva_databases/release_138.1/Exports/SILVA_138.1_SSURef_NR99_tax_silva_trunc.fasta.gz -O ./silva/SILVA_138.1_SSURef_NR99_tax_silva.fasta.gz
+wget https://www.arb-silva.de/fileadmin/silva_databases/release_138.1/Exports/SILVA_138.1_LSURef_NR99_tax_silva_trunc.fasta.gz -O ./silva/SILVA_138.1_LSURef_NR99_tax_silva.fasta.gz
 ```
-+ 多序列比对
++ 提取保守区
 ```bash
 brew install mafft
 
@@ -290,12 +217,74 @@ brew install mafft
 ```
 
 ### 2.3 不同环境细菌的mRNA匹配情况
+
+| **植物相关** |  |  |  |
+| --- | --- | --- | --- |
+| Lactococcus lactis | 乳酸乳球菌 | 最主要存在植物表面存在，被摄入人体内之后才在肠道定植 | 
+| Xanthomonas campestris | 野油菜黄单胞菌 | 可引起多种植物疾病的细菌，十字花科黑腐病等 |
+| Streptococcus thermophilus | 嗜热链球菌 | 菌株能大量的从植物中分离，并分布到环境中，其降解特性可用于乳制品 |
+| Pseudomonas syringae | 丁香假单胞菌 | 植物病原体 |
+| Pseudomonas protegens | 恶臭假单胞菌 | 植物保护细菌，能够产生对抗植物病原体的物质 |
+| Bacillus velezensis | 贝雷兹芽孢杆菌 | 保护植物不受病原菌侵袭，植物内生菌 |
+| Serratia marcescens | 粘质沙雷氏菌 | 从多种植物中都能分离得到 |
+| **水体土壤等环境** |  |  |
+| Clostridium acetobutylicum | 丙酮丁醇梭菌 | 最常生活在土壤中，不过也在多种环境中被鉴定到 |
+| Rhodococcus erythropolis | 红球菌 | 通常在土壤和水体中发现，以及真核细胞，野生环境中居多，利用多种有机物 |
+| Arcobacter butzleri | 布氏弧杆菌 | 该细菌在环境中广泛存在，主要是各种水体分离得到该菌株，会引起腹泻 |
+| Clostridium beijerinckii | 拜氏梭菌 | 在自然界中普遍存在，并且最初分离自土壤样品 |
+| Azotobacter vinelandii | 维氏固氮杆菌 | 革兰氏阴性的固氮细菌，严格需氧且广泛自由生存的土壤微生物 |
+| Acinetobacter baumannii | 鲍曼不动杆菌 | 其大量存在于环境中，在水体，土壤甚至植物表面都有发现 |
+| **人体口腔、皮肤等** |  |  |
+| Escherichia coli | 大肠杆菌 | 最主要是肠道定植，也广泛存在与环境中 |
+| Streptococcus mutans | 变形链球菌 | 引起龋齿，主要生活在人类口腔 |
+| Staphylococcus epidermidis | 表皮葡萄球菌 | 每个人表皮都有的一种机会致病菌 |
+| Staphylococcus aureus | 金黄色葡萄球菌 | 自然栖息地在人类和动物中，是皮肤自然菌群的一部分，当然也在环境中能够发现其存在 |
+| Bifidobacterium breve  | 短双歧杆菌 | 主要生活在人类的及与人有关的生境中 |
+| Streptococcus salivarius | 唾液链球菌 | 存在于人体上呼吸道和口腔 |
+| **其他** |  |  |
+| Riemerella anatipestifer | 鸭瘟立默氏菌 | 主要存在于鸭中，并且能够感染鸭 |
+| Methanosarcina barkeri | 巴氏甲烷八叠球菌 | 在淡水湖Fusaro lake中的泥浆样本中发现了该菌株，能够产甲烷，是该属最常见的菌 |
+| Methanosarcina siciliae | 西西里甲烷八叠球菌 | 从海底泥中分离的厌氧菌 |
+
 ```bash
 cd bacteria_mRNA
+
+# index
 mkdir index
 
+find ASSEMBLY -maxdepth 1 -mindepth 1 -type d |
+  cut -d "/" -f 2 |
+  parallel -j 2 --keep-order '
+    echo "===> index_{1}"
+    mkdir -p index/{1}
 
+    bowtie2-build --threads 2 ASSEMBLY/{1}/*_cds_from_genomic.fna.gz index/{1}/{1}
+  '
 
+# align
+mkdir output
+
+for PREFIX in Ath_root_NC;do
+  find ASSEMBLY -maxdepth 1 -mindepth 1 -type d |
+    cut -d "/" -f 2 |
+    parallel -j 2 --line-buffer "
+      echo '====> align_{1}'
+      mkdir -p output/${PREFIX}/{1}
+
+      bowtie2 -a -t \
+      --end-to-end -D 20 -R 3 \
+      -N 0 -L 10 -i S,1,0.50 --np 0 \
+      --xeq -x index/{1}/{1} \
+      -1 ../data/${PREFIX}/R1.fq.gz -2 ../data/${PREFIX}/R2.fq.gz \
+      -S output/${PREFIX}/{1}/{1}_align.sam \
+      2>&1 |
+      tee output/${PREFIX}/{1}/{1}.bowtie2.log 
+
+      pigz output/${PREFIX}/{1}/{1}_align.sam
+    "
+done
+
+# statistics
 
 ```
 
@@ -346,21 +335,4 @@ time parallel -j 3 "
     NJU_seq/data/ath_rrna/{}.fa temp/${PREFIX}/filter_rrna.out.tmp {} \\
     >output/${PREFIX}/rrna_{}.tsv
   " ::: 28s 18s 5-8s
-```
-```bash
-time pigz -dcf output/${PREFIX}/rrna.raw.sam.gz |
-  parallel --pipe --block 10M --no-run-if-empty --linebuffer --keep-order -j ${THREAD} '
-    awk '\''$6!="*"&&$7=="="{print $1 "\t" $3 "\t" $4 "\t" $6 "\t" $10}
-    '\'' |
-    perl NJU_seq/rrna_analysis/matchquality_judge.pl |
-    perl NJU_seq/rrna_analysis/multimatch_judge.pl
-  ' \
-  >temp/${PREFIX}/rrna.out.tmp
-```
-
-```bash
-pigz -dcf SILVA_138.1_LSURef_NR99_tax_silva.fasta.gz | grep ">" | perl -ne'
-  if (/\sBacteria;/) {
-    print "$_";
-  }' | sed 's/^>//g' > LSU.lst
 ```
