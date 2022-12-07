@@ -204,19 +204,39 @@ done
 ### 2.2 与rRNA恒定区匹配
 **细菌的16SrDNA中有多个区段保守性，根据这些保守区可以设计出细菌通用物，可以扩增出所有细菌的16SrDNA片段，并且这些引物仅对细菌是特异性的，也就是说这些引物不会与非细菌的DNA互补**
 ```bash
-mkdir -p silva
-wget https://www.arb-silva.de/fileadmin/silva_databases/release_138.1/Exports/SILVA_138.1_SSURef_NR99_tax_silva_trunc.fasta.gz -O ./silva/SILVA_138.1_SSURef_NR99_tax_silva.fasta.gz
-wget https://www.arb-silva.de/fileadmin/silva_databases/release_138.1/Exports/SILVA_138.1_LSURef_NR99_tax_silva_trunc.fasta.gz -O ./silva/SILVA_138.1_LSURef_NR99_tax_silva.fasta.gz
-```
-+ 提取保守区
-```bash
+cd bacteria
+mkdir -p rRNA_conserve
+
+# 提取所有菌株的16SrRNA与23SrRNA
+find ASSEMBLY -maxdepth 1 -mindepth 1 -type d |
+  cut -d "/" -f 2 |
+  parallel -j 2 --keep-order '
+    echo "===> extract_{1}"
+
+    pigz -dcf ASSEMBLY/{1}/*_rna_from_genomic.fna.gz | faops some stdin <(pigz -dcf ASSEMBLY/{1}/*_rna_from_genomic.fna.gz | grep ">" | grep "16S" | cut -d ">" -f 2 | head -n 1) stdout >> rRNA_conserve/16S.fas
+
+    pigz -dcf ASSEMBLY/{1}/*_rna_from_genomic.fna.gz | faops some stdin <(pigz -dcf ASSEMBLY/{1}/*_rna_from_genomic.fna.gz | grep ">" | grep "23S" | cut -d ">" -f 2 | head -n 1) stdout >> rRNA_conserve/23S.fas
+  '
+
+perl script/remove_sequence_with_N.pl rRNA_conserve/16S.fas > tem&&
+  mv tem rRNA_conserve/16S.fas
+perl script/remove_sequence_with_N.pl rRNA_conserve/23S.fas > tem&&
+  mv tem rRNA_conserve/23S.fas
+
+# 多序列比对
 brew install mafft
 
+mafft --reorder rRNA_conserve/16S.fas > rRNA_conserve/16S_align.fas
+mafft --reorder rRNA_conserve/23S.fas > rRNA_conserve/23S_align.fas
 
+# 保守区查找
 
 ```
 
 ### 2.3 不同环境细菌的mRNA匹配情况
+```bash
+mlr --itsv --omd cat
+```
 
 | **植物相关** |  |  |  |
 | --- | --- | --- | --- |
@@ -284,11 +304,50 @@ for PREFIX in Ath_root_NC;do
     "
 done
 
-# statistics
+# statistics_mRNA
+bash script/statistics.sh
+bash script/merge_plot.sh
 
+cat output/${PREFIX}/align_statistics.tsv | keep-header -- sort -nr -k4,4 > ${PREFIX}_mRNA.tsv
+
+tsv-join --filter-file <(cut -d "," -f 1,2 ../bacteria/Bacteria.assembly.collect.csv | tr "," "\t") -H --key-fields name --append-fields Organism_name ${PREFIX}_mRNA.tsv | 
+tsv-select -H -f Organism_name --rest last > tem&&
+  mv tem ${PREFIX}_mRNA.tsv
+
+cut -f 3 output/${PREFIX}/total_remove_reads_info.tsv | 
+  sed '1d' |
+  sort -n | uniq -c |
+  perl -ne'
+    s/^\s+//;
+    print "$_";
+  ' |
+  tr " " "\t" | tsv-select --fields 2,1 > output/${PREFIX}/length_distribution.tsv
+
+(echo -e "reads_length\tRemove_number" && cat output/${PREFIX}/length_distribution.tsv) > tem&&
+  mv tem output/${PREFIX}/length_distribution.tsv 
+
+perl ../bacteria/script/tsv_join_plus.pl data/${PREFIX}/length_distribution.tsv output/${PREFIX}/length_distribution.tsv > tem&&
+  mv tem data/${PREFIX}/length_distribution.tsv
+
+echo -e "reads_length\tnumber\tgroup" > data/${PREFIX}/plot.tsv
+sed '1d' data/${PREFIX}/length_distribution.tsv | perl -ne'
+  chomp;
+  if (/^(\S+)\t(\S+)\t(\S+)/) {
+    my $reads_length = $1;
+    my $total_number = $2;
+    my $remove_number = $3;
+    my $keep_number = ( $total_number - $remove_number );
+    print "$reads_length\t$keep_number\tKeep\n";
+    print "$reads_length\t$remove_number\tRemove\n";
+  }
+' >> data/${PREFIX}/plot.tsv
+
+# statistics_rRNA_tRNA
+cd bacteria_mRNA
+
+( head -n 1 ../bacteria/output/${PREFIX}/align_statistics.tsv && cat ../bacteria/output/${PREFIX}/align_statistics.tsv | grep -w -f <(ls ASSEMBLY) ) > tem&&
+  mv tem output/${PREFIX}_rRNA_tRNA.tsv
 ```
-
-
 
 ## 3 Alignment and Filter
 ```bash
@@ -335,4 +394,9 @@ time parallel -j 3 "
     NJU_seq/data/ath_rrna/{}.fa temp/${PREFIX}/filter_rrna.out.tmp {} \\
     >output/${PREFIX}/rrna_{}.tsv
   " ::: 28s 18s 5-8s
+```
+
+```bash
+perl ../bacteria/script/tsv_join_plus.pl data/${PREFIX}/length_distribution.tsv output/${PREFIX}/length_distribution.tsv > tem&&
+  mv tem data/${PREFIX}/length_distribution.tsv
 ```
