@@ -180,7 +180,7 @@ DATA <- read.table("plot.tsv", header = TRUE, sep = "\t")
 ggplot(DATA, aes(reads_length, number, fill=group)) +
   geom_bar(stat = "identity")+
   xlim(9,70)+
-  labs(title = "Ath_flower_NC")+
+  labs(title = "Ath_root_NC")+
   theme(text=element_text(face = "bold"), axis.text=element_text(face = "bold"), plot.title = element_text(hjust=0.5))
 ```
 
@@ -188,15 +188,40 @@ ggplot(DATA, aes(reads_length, number, fill=group)) +
 ```bash
 cd NJU_seq_analysis_ath
 PREFIX=Ath_flower_1
+brew install seqkit
+
+# match
 cut -f 1 bacteria/output/${PREFIX}/total_remove_reads_info.tsv | sed '1d' > data/${PREFIX}/discard.lst
 pigz -dcf data/${PREFIX}/R1.fq.gz | grep "@" |
   cut -d " " -f 1 | sed 's/^@//g' |
   grep -v -w -f data/${PREFIX}/discard.lst > data/${PREFIX}/keep_ID.lst
 
-brew install seqkit
 for J in R1 R2;do
   echo "====> $J"
   seqkit grep -f data/${PREFIX}/keep_ID.lst data/${PREFIX}/${J}.fq.gz > data/${PREFIX}/${J}_filter.fq
+done
+
+# length =< 13
+cat data/${PREFIX}/R1_filter.fq |
+  perl -e'
+    while (<>) {
+      chomp;
+      my $reads_name = $_;
+      chomp( my $seq = <> );
+      chomp( my $info = <> );
+      chomp( my $quality = <> );
+      my $reads_len = length($seq);
+      if ( $reads_len > 13 ) {
+        $reads_name =~ s/^@//;
+        print "$reads_name\n";
+      }
+    }
+  ' | cut -d " " -f 1 > data/${PREFIX}/len_filter_ID.lst
+
+for J in R1 R2;do
+  echo "====> $J"
+  seqkit grep -f data/${PREFIX}/len_filter_ID.lst data/${PREFIX}/${J}_filter.fq > tem&&
+    mv tem data/${PREFIX}/${J}_filter.fq
   pigz -p 4 data/${PREFIX}/${J}_filter.fq
 done
 ```
@@ -283,7 +308,6 @@ find ASSEMBLY -maxdepth 1 -mindepth 1 -type d |
 
 # align
 mkdir output
-
 for PREFIX in Ath_root_NC;do
   find ASSEMBLY -maxdepth 1 -mindepth 1 -type d |
     cut -d "/" -f 2 |
@@ -346,7 +370,7 @@ sed '1d' data/${PREFIX}/length_distribution.tsv | perl -ne'
 cd bacteria_mRNA
 
 ( head -n 1 ../bacteria/output/${PREFIX}/align_statistics.tsv && cat ../bacteria/output/${PREFIX}/align_statistics.tsv | grep -w -f <(ls ASSEMBLY) ) > tem&&
-  mv tem output/${PREFIX}_rRNA_tRNA.tsv
+  mv tem ${PREFIX}_rRNA_tRNA.tsv
 ```
 
 ## 3 Alignment and Filter
