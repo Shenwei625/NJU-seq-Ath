@@ -255,9 +255,63 @@ mafft --reorder rRNA_conserve/16S.fas > rRNA_conserve/16S_align.fas
 mafft --reorder rRNA_conserve/23S.fas > rRNA_conserve/23S_align.fas
 
 # 保守区查找
+# 使用MEME的txt结果文件 
+# 16S
+perl script/16S_motif.pl 16S_region.tsv | sed 's/,$//g' > rRNA_conserve/16S_filter.tsv
+cat rRNA_conserve/16S_filter.tsv | wc -l | xargs seq |
+  parallel -j 4 -k --linebuffer '
+    faops region rRNA_conserve/16S.fa <(sed -n "{1}p" rRNA_conserve/16S_filter.tsv) stdout >> rRNA_conserve/16S_conserve.fa
+  '
+seqkit rmdup -s rRNA_conserve/16S_conserve.fa -o rRNA_conserve/16S_conserve_rmdup.fa
 
+# 23S
+perl script/23S_motif.pl rRNA_conserve/23S_region.tsv | sed 's/,$//g' > rRNA_conserve/23S_filter.tsv
+cat rRNA_conserve/23S_filter.tsv | wc -l | xargs seq |
+  parallel -j 4 -k --linebuffer '
+    faops region rRNA_conserve/23S.fa <(sed -n "{1}p" rRNA_conserve/23S_filter.tsv) stdout >> rRNA_conserve/23S_conserve.fa
+  '
+seqkit rmdup -s rRNA_conserve/23S_conserve.fa -o rRNA_conserve/23S_conserve_rmdup.fa
 ```
+```bash
+# index
+mkdir -p index/16S index/23S 
+bowtie2-build --threads 2 rRNA_conserve/16S_conserve_rmdup.fa index/16S/16S
+bowtie2-build --threads 2 rRNA_conserve/23S_conserve_rmdup.fa index/23S/23S
 
+# align
+PREFIX=Ath_root_NC
+mkdir -p rRNA_conserve/${PREFIX}/16S rRNA_conserve/${PREFIX}/23S
+
+for J in 16S 23S;do
+  echo "====> $J"
+
+  bowtie2 -p 4 -a -t \
+    --end-to-end -D 20 -R 3 \
+    -N 0 -L 10 -i S,1,0.50 --np 0 \
+    --xeq -x index/${J}/${J} \
+    -1 ../data/${PREFIX}/R1.fq.gz -2 ../data/${PREFIX}/R2.fq.gz \
+    -S rRNA_conserve/${PREFIX}/${J}/${J}_align.sam \
+    2>&1 |
+    tee rRNA_conserve/${PREFIX}/${J}/${J}.bowtie2.log 
+
+  pigz -p 4 rRNA_conserve/${PREFIX}/${J}/${J}_align.sam
+done
+
+# statistics
+for J in 16S 23S;do
+  echo "====> $J"
+
+  pigz -dcf rRNA_conserve/${PREFIX}/${J}/${J}_align.sam.gz |
+    grep -v "@" |
+    tsv-filter --regex '6:^[0-9]+=$' |
+    tsv-filter --str-eq 7:= |
+    cut -f 1,10 | sort | uniq > rRNA_conserve/${PREFIX}/${J}/${J}_match.tsv
+
+  perl ../bacteria/script/pre_remove_statistics.pl ../data/${PREFIX}/R1.fq.gz rRNA_conserve/${PREFIX}/${J}/${J}_match.tsv \
+  rRNA_conserve/${PREFIX}/${J}/reads_info.tsv \
+  rRNA_conserve/${PREFIX}/${J}/remove_info.tsv
+done
+```
 ### 2.3 不同环境细菌的mRNA匹配情况
 ```bash
 mlr --itsv --omd cat
@@ -308,6 +362,7 @@ find ASSEMBLY -maxdepth 1 -mindepth 1 -type d |
 
 # align
 mkdir output
+PREFIX=Ath_root_NC
 for PREFIX in Ath_root_NC;do
   find ASSEMBLY -maxdepth 1 -mindepth 1 -type d |
     cut -d "/" -f 2 |
@@ -418,9 +473,4 @@ time parallel -j 3 "
     NJU_seq/data/ath_rrna/{}.fa temp/${PREFIX}/filter_rrna.out.tmp {} \\
     >output/${PREFIX}/rrna_{}.tsv
   " ::: 28s 18s 5-8s
-```
-
-```bash
-perl ../bacteria/script/tsv_join_plus.pl data/${PREFIX}/length_distribution.tsv output/${PREFIX}/length_distribution.tsv > tem&&
-  mv tem data/${PREFIX}/length_distribution.tsv
 ```
