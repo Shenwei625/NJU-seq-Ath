@@ -180,7 +180,7 @@ DATA <- read.table("plot.tsv", header = TRUE, sep = "\t")
 ggplot(DATA, aes(reads_length, number, fill=group)) +
   geom_bar(stat = "identity")+
   xlim(9,70)+
-  labs(title = "Ath_root_NC")+
+  labs(title = "Ath_root_1")+
   theme(text=element_text(face = "bold"), axis.text=element_text(face = "bold"), plot.title = element_text(hjust=0.5))
 ```
 
@@ -296,6 +296,19 @@ for J in 16S 23S;do
 
   pigz -p 4 rRNA_conserve/${PREFIX}/${J}/${J}_align.sam
 done
+
+bsub -q serial -n 6 -J "flowernc23" "
+  bowtie2 -p 4 -a -t \
+    --end-to-end -D 20 -R 3 \
+    -N 0 -L 10 -i S,1,0.50 --np 0 \
+    --xeq -x index/23S/23S \
+    -1 ../data/Ath_flower_NC/R1.fq.gz -2 ../data/Ath_flower_NC/R2.fq.gz \
+    -S rRNA_conserve/Ath_flower_NC/23S/23S_align.sam \
+    2>&1 |
+    tee rRNA_conserve/Ath_flower_NC/23S/23S.bowtie2.log 
+
+    pigz -p 4 rRNA_conserve/Ath_flower_NC/23S/23S_align.sam
+"
 
 # statistics
 for J in 16S 23S;do
