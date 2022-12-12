@@ -7,7 +7,7 @@ use Getopt::Long;
 =head1 NAME
 remove_select_reads.pl  -- Remove selected reads 
 =head1 SYNOPSIS
-    perl remove_select_reads.pl -r file1.fastq.gz -f file2.tsv
+    perl remove_select_reads.pl -r file1.fastq -f file2.tsv
         options:
             --help\-h   Help message
             --raw\-r    The raw fastq file(compressed) that you want to process
