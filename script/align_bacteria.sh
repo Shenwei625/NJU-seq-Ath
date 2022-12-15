@@ -1,5 +1,7 @@
 #! usr/bin/bash
-for PREFIX in Ath_flower_NC Ath_flower_1 Ath_flower_2 Ath_flower_3;do
+# bash align.sh PREFIX
+PREFIX=$1
+
 mkdir -p rRNA_tRNA/output/${PREFIX}
 
 find index/rRNA_tRNA -maxdepth 1 -mindepth 1 -type d |
@@ -19,4 +21,3 @@ find index/rRNA_tRNA -maxdepth 1 -mindepth 1 -type d |
 
         pigz rRNA_tRNA/output/${PREFIX}/{1}/{1}_align.sam
       "
-done
