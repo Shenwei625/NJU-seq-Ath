@@ -73,3 +73,7 @@ done
 
 tsv-uniq -f 1 $1/output/${PREFIX}/total_remove_reads_info.tsv > $1/output/${PREFIX}/total_tem&&
   mv $1/output/${PREFIX}/total_tem $1/output/${PREFIX}/total_remove_reads_info.tsv
+
+tsv-join --filter-file <(cut -d "," -f 1,2 ../../NJU_seq_analysis_ath/bacteria/Bacteria.assembly.collect.csv | tr "," "\t") -H --key-fields name --append-fields Organism_name $1/output/${PREFIX}/align_statistics.tsv | 
+tsv-select -H -f Organism_name --rest last > tem&&
+  mv tem $1/output/${PREFIX}/align_statistics.tsv
