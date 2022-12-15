@@ -272,9 +272,9 @@ bash script/statistics.sh mRNA ${PREFIX}
 # merge
 bash script/merge.sh mRNA ${PREFIX}
 
-tsv-join --filter-file <(cut -d "," -f 1,2 ../../NJU_seq_analysis_ath/bacteria/Bacteria.assembly.collect.csv | tr "," "\t") -H --key-fields name --append-fields Organism_name rRNA_tRNA/output/${PREFIX}/align_statistics.tsv | 
+tsv-join --filter-file <(cut -d "," -f 1,2 ../../NJU_seq_analysis_ath/bacteria/Bacteria.assembly.collect.csv | tr "," "\t") -H --key-fields name --append-fields Organism_name mRNA/output/${PREFIX}/align_statistics.tsv | 
 tsv-select -H -f Organism_name --rest last > tem&&
-  mv tem rRNA_tRNA/output/${PREFIX}/align_statistics.tsv
+  mv tem mRNA/output/${PREFIX}/align_statistics.tsv
 
 # remove
 mkdir -p mRNA/filter/${PREFIX}
@@ -290,5 +290,67 @@ for J in R1 R2;do
   pigz -p 4 mRNA/filter/${PREFIX}/${J}_conserve_rRNA_mRNA.fq
 done
 # repeat Ath_flower_1 Ath_flower_2 Ath_flower_3
+
+# plot
+J=../data/${PREFIX}
+pigz -dcf $J/R1.fq.gz | perl -e'
+  while (<>) {
+    chomp( my $seq_name = $_ );
+    chomp( my $seq = <> );
+    my $seq_length = length($seq);
+    chomp( my $info = <> );
+    chomp( my $quality = <> );
+    print "$seq_length\n";
+  }
+' | sort -n | uniq -c | perl -ne'
+      s/^\s+//;
+      print "$_";
+    ' | tr " " "\t" | tsv-select --fields 2,1 > $J/length_distribution.tsv
+  
+(echo -e "reads_length\tTotal_number" && cat $J/length_distribution.tsv) > tem&&
+  mv tem $J/length_distribution.tsv
+
+for dir in rRNA_conserve rRNA_tRNA mRNA;do
+  sed '1d' $dir/output/${PREFIX}/total_remove_reads_info.tsv >> ${PREFIX}_remove.tsv
+done
+
+cut -f 3 ${PREFIX}_remove.tsv | 
+  sed '1d' |
+  sort -n | uniq -c |
+  perl -ne'
+    s/^\s+//;
+    print "$_";
+  ' |
+  tr " " "\t" | tsv-select --fields 2,1 > ${PREFIX}_hist.tsv
+
+(echo -e "reads_length\tRemove_number" && cat ${PREFIX}_hist.tsv) > tem&&
+  mv tem ${PREFIX}_hist.tsv
+
+perl script/tsv_join_plus.pl ../data/${PREFIX}/length_distribution.tsv ${PREFIX}_hist.tsv > tem&&
+  mv tem ../data/${PREFIX}/length_distribution.tsv
+
+echo -e "reads_length\tnumber\tgroup" > ../data/${PREFIX}/plot.tsv
+sed '1d' ../data/${PREFIX}/length_distribution.tsv | perl -ne'
+  chomp;
+  if (/^(\S+)\t(\S+)\t(\S+)/) {
+    my $reads_length = $1;
+    my $total_number = $2;
+    my $remove_number = $3;
+    my $keep_number = ( $total_number - $remove_number );
+    print "$reads_length\t$keep_number\tKeep\n";
+    print "$reads_length\t$remove_number\tRemove\n";
+  }
+' >> ../data/${PREFIX}/plot.tsv
 ```
+```R
+library("ggplot2")
+DATA <- read.table("plot.tsv", header = TRUE, sep = "\t")
+
+ggplot(DATA, aes(reads_length, number, fill=group)) +
+  geom_bar(stat = "identity")+
+  xlim(9,70)+
+  labs(title = "Ath_flower_NC")+
+  theme(text=element_text(face = "bold"), axis.text=element_text(face = "bold"), plot.title = element_text(hjust=0.5))
+```
+
 
