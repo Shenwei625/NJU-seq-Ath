@@ -57,6 +57,30 @@ cat ASSEMBLY/rsync.tsv |
     ' |
     grep -v ": OK"
 ```
++ Info
+```bash
+echo -e "name\tBacteria_CG_content_rRNA_tRNA\tBacteria_CG_content_mRNA" > ASSEMBLY/statistics.tsv
+
+JOB=$(find ASSEMBLY -maxdepth 1 -mindepth 1 -type d | cut -d "/" -f 2 )
+
+for J in $JOB;do
+echo "===> $J"
+    export i=$J
+
+    pigz -dcf ASSEMBLY/$J/*_rna_from_genomic.fna.gz | faops count stdin | tail -n 1 |
+      perl -a -F"\t" -e '
+        print "$ENV{i}\t";
+        my $CG_content = ((( @F[3] + @F[4] ) / @F[1] ) * 100 );
+        printf "%.2f%%\t", $CG_content;
+      ' >> ASSEMBLY/statistics.tsv
+
+    pigz -dcf ASSEMBLY/$J/*_cds_from_genomic.fna.gz | faops count stdin | tail -n 1 |
+      perl -a -F"\t" -e '
+        my $CG_content = ((( @F[3] + @F[4] ) / @F[1] ) * 100 );
+        printf "%.2f%%\n", $CG_content;
+      ' >> ASSEMBLY/statistics.tsv  
+done
+```
 
 ## 2 Remove rRNA conserve region
 ```bash
@@ -104,7 +128,6 @@ bowtie2-build --threads 2 rRNA_conserve/23S_conserve_rmdup.fa index/23S/23S
 mkdir -p rRNA_conserve/output
 PREFIX=Ath_flower_NC
 for J in 16S 23S;do
-    echo "===> $J conserve region align"
     mkdir -p rRNA_conserve/output/${PREFIX}/${J}
 
     bowtie2 -p 20 -a -t \
@@ -129,7 +152,7 @@ for J in 16S 23S;do
     tsv-filter --str-eq 7:= |
     cut -f 1,10 | tsv-uniq -f 1 > rRNA_conserve/output/${PREFIX}/${J}/${J}_match.tsv
 
-  perl /script/pre_remove_statistics.pl ../data/${PREFIX}/R1.fq.gz rRNA_conserve/output/${PREFIX}/${J}/${J}_match.tsv \
+  perl script/pre_remove_statistics.pl ../data/${PREFIX}/R1.fq.gz rRNA_conserve/output/${PREFIX}/${J}/${J}_match.tsv \
   rRNA_conserve/output/${PREFIX}/${J}/reads_info.tsv \
   rRNA_conserve/output/${PREFIX}/${J}/remove_info.tsv
 done
@@ -156,7 +179,7 @@ done
 ## 3 Remove rRNA and tRNA of 1331 bacteria
 ```bash
 cd remove_bacteria
-mkdir -p total_rRNA
+mkdir -p rRNA_tRNA
 mkdir -p index/rRNA_tRNA
 
 # index tRNA and rRNA and ncRNA(*_rna_from_genomic.fna.gz)
@@ -170,48 +193,13 @@ find ../../NJU_seq_analysis_ath/bacteria/ASSEMBLY -maxdepth 1 -mindepth 1 -type 
 
 # align
 PREFIX=Ath_flower_NC
-mkdir -p rRNA_tRNA/output/${PREFIX}
-
-find index/rRNA_tRNA -maxdepth 1 -mindepth 1 -type d |
-    cut -d "/" -f 3 |
-      parallel -j 20 --line-buffer "
-        echo '===>{1}'
-        mkdir -p rRNA_tRNA/output/${PREFIX}/{1}
-
-        bowtie2 -a -t \
-          --end-to-end -D 20 -R 3 \
-          -N 0 -L 10 -i S,1,0.50 --np 0 \
-          --xeq -x index/rRNA_tRNA/{1}/{1} \
-          -1 rRNA_conserve/filter/${PREFIX}/R1_conserve.fq -2 rRNA_conserve/filter/${PREFIX}/R2_conserve.fq \
-          -S rRNA_tRNA/output/${PREFIX}/{1}/{1}_align.sam \
-          2>&1 |
-        tee rRNA_tRNA/output/${PREFIX}/{1}/{1}.bowtie2.log
-
-        pigz rRNA_tRNA/output/${PREFIX}/{1}/{1}_align.sam
-      "
+bash script/align_bacteria.sh ${PREFIX}
 
 # statistics
-ls rRNA_tRNA/output/${PREFIX} |
-  parallel -j 20 --linebuffer "
-  echo '====> {1}'
-
-  pigz -dcf rRNA_tRNA/output/${PREFIX}/{1}/{1}_align.sam.gz |
-        grep -v "@" |
-        tsv-filter --regex '6:^[0-9]+=$' |
-        tsv-filter --str-eq 7:= |
-        cut -f 1,10 | sort | uniq > rRNA_tRNA/output/${PREFIX}/{1}/{1}_match.tsv
-
-  perl script/pre_remove_statistics.pl ../data/${PREFIX}/R1.fq.gz rRNA_tRNA/output/${PREFIX}/{1}/{1}_match.tsv \
-  rRNA_tRNA/output/${PREFIX}/{1}/reads_info.tsv \
-  rRNA_tRNA/output/${PREFIX}/{1}/remove_info.tsv
-"
+bash script/statistics.sh rRNA_tRNA $PREFIX
 
 # merge
 bash script/merge.sh rRNA_tRNA $PREFIX
-
-tsv-join --filter-file <(cut -d "," -f 1,2 ../../NJU_seq_analysis_ath/bacteria/Bacteria.assembly.collect.csv | tr "," "\t") -H --key-fields name --append-fields Organism_name rRNA_tRNA/output/${PREFIX}/align_statistics.tsv | 
-tsv-select -H -f Organism_name --rest last > tem&&
-  mv tem rRNA_tRNA/output/${PREFIX}/align_statistics.tsv
 
 # remove
 mkdir -p rRNA_tRNA/filter/${PREFIX}
@@ -244,37 +232,25 @@ find ../../NJU_seq_analysis_ath/bacteria/ASSEMBLY -maxdepth 1 -mindepth 1 -type 
     bowtie2-build --threads 2 ../../NJU_seq_analysis_ath/bacteria/ASSEMBLY/{1}/*_cds_from_genomic.fna.gz index/mRNA/{1}/{1} 
   "
 
-# align
+# split_align
 PREFIX=Ath_flower_NC
 mkdir -p mRNA/output/${PREFIX}
+mkdir -p job
 
 find index/mRNA -maxdepth 1 -mindepth 1 -type d |
-    cut -d "/" -f 3 |
-      parallel -j 20 --line-buffer "
-        echo '===>$PREFIX {1}'
-        mkdir -p mRNA/output/${PREFIX}/{1}
+  cut -d "/" -f 3 |
+  split -l 100 -a 2 -d - job/ 
 
-        bowtie2 -a -t \
-          --end-to-end -D 20 -R 3 \
-          -N 0 -L 10 -i S,1,0.50 --np 0 \
-          --xeq -x index/mRNA/{1}/{1} \
-          -1 rRNA_tRNA/filter/${PREFIX}/R1_conserve_rRNA.fq.gz -2 rRNA_tRNA/filter/${PREFIX}/R2_conserve_rRNA.fq.gz \
-          -S mRNA/output/${PREFIX}/{1}/{1}_align.sam \
-          2>&1 |
-        tee mRNA/output/${PREFIX}/{1}/{1}.bowtie2.log
-
-        pigz mRNA/output/${PREFIX}/{1}/{1}_align.sam
-      "
+JOB=$(find job -maxdepth 1 -type f -name "[0-9]?" | sort -n)
+for J in $JOB;do
+  bsub -q largemem -n 24 -J "$J" "bash script/align_mRNA.sh ${PREFIX} $J"
+done
 
 # statistics 
 bash script/statistics.sh mRNA ${PREFIX}
 
 # merge
 bash script/merge.sh mRNA ${PREFIX}
-
-tsv-join --filter-file <(cut -d "," -f 1,2 ../../NJU_seq_analysis_ath/bacteria/Bacteria.assembly.collect.csv | tr "," "\t") -H --key-fields name --append-fields Organism_name mRNA/output/${PREFIX}/align_statistics.tsv | 
-tsv-select -H -f Organism_name --rest last > tem&&
-  mv tem mRNA/output/${PREFIX}/align_statistics.tsv
 
 # remove
 mkdir -p mRNA/filter/${PREFIX}
@@ -290,67 +266,227 @@ for J in R1 R2;do
   pigz -p 4 mRNA/filter/${PREFIX}/${J}_conserve_rRNA_mRNA.fq
 done
 # repeat Ath_flower_1 Ath_flower_2 Ath_flower_3
+```
 
-# plot
-J=../data/${PREFIX}
-pigz -dcf $J/R1.fq.gz | perl -e'
-  while (<>) {
-    chomp( my $seq_name = $_ );
-    chomp( my $seq = <> );
-    my $seq_length = length($seq);
-    chomp( my $info = <> );
-    chomp( my $quality = <> );
-    print "$seq_length\n";
-  }
-' | sort -n | uniq -c | perl -ne'
-      s/^\s+//;
-      print "$_";
-    ' | tr " " "\t" | tsv-select --fields 2,1 > $J/length_distribution.tsv
-  
-(echo -e "reads_length\tTotal_number" && cat $J/length_distribution.tsv) > tem&&
-  mv tem $J/length_distribution.tsv
+## 5 Align
++ Different deletion stages
+```bash
+cd Ath
+PREFIX=Ath_flower_NC
+mkdir -p stage_align
 
-for dir in rRNA_conserve rRNA_tRNA mRNA;do
-  sed '1d' $dir/output/${PREFIX}/total_remove_reads_info.tsv >> ${PREFIX}_remove.tsv
+bash remove_bacteria/script/align.sh stage rRNA_conserve ${PREFIX} rrna
+bash remove_bacteria/script/align.sh stage rRNA_tRNA ${PREFIX}  rrna
+bash remove_bacteria/script/align.sh stage mRNA ${PREFIX} rrna
+
+bash remove_bacteria/script/align.sh stage rRNA_conserve ${PREFIX} protein_coding
+bash remove_bacteria/script/align.sh stage rRNA_tRNA ${PREFIX}  protein_coding
+bash remove_bacteria/script/align.sh stage mRNA ${PREFIX} protein_coding
+# repeat Ath_flower_1 Ath_flower_2 Ath_flower_3
+```
+
++ Remove reads
+```bash
+# extract
+cd remove_bacteria
+PREFIX=Ath_flower_NC
+
+mkdir -p rRNA_conserve/remove/${PREFIX}
+for J in R1 R2;do
+  echo "====> $J"
+  seqkit grep -j 4 -f <(sed '1d' rRNA_conserve/output/${PREFIX}/total_remove_reads_info.tsv | cut -f 1 ) ../data/${PREFIX}/${J}.fq.gz > rRNA_conserve/remove/${PREFIX}/${J}_conserve.re.fq
+
+  pigz -p 4 rRNA_conserve/remove/${PREFIX}/${J}_conserve.re.fq
 done
 
-cut -f 3 ${PREFIX}_remove.tsv | 
-  sed '1d' |
-  sort -n | uniq -c |
-  perl -ne'
-    s/^\s+//;
-    print "$_";
+mkdir -p rRNA_tRNA/remove/${PREFIX}
+for J in R1 R2;do
+  echo "====> $J"
+  seqkit grep -j 4 -f <(sed '1d' rRNA_tRNA/output/${PREFIX}/total_remove_reads_info.tsv | cut -f 1) rRNA_conserve/filter/${PREFIX}/${J}_conserve.fq.gz > rRNA_tRNA/remove/${PREFIX}/${J}_conserve_rRNA.re.fq
+
+  pigz -p 4 rRNA_tRNA/remove/${PREFIX}/${J}_conserve_rRNA.re.fq
+done
+
+mkdir -p mRNA/remove/${PREFIX}
+for J in R1 R2;do
+  echo "====> $J"
+  seqkit grep -j 4 -f <(sed '1d' mRNA/output/${PREFIX}/total_remove_reads_info.tsv | cut -f 1) rRNA_tRNA/filter/${PREFIX}/${J}_conserve_rRNA.fq.gz > mRNA/remove/${PREFIX}/${J}_conserve_rRNA_mRNA.re.fq
+
+  pigz -p 4 mRNA/remove/${PREFIX}/${J}_conserve_rRNA_mRNA.re.fq
+done
+
+# ailgn
+bash remove_bacteria/script/align.sh remove rRNA_conserve ${PREFIX} rrna
+bash remove_bacteria/script/align.sh remove rRNA_tRNA ${PREFIX}  rrna
+bash remove_bacteria/script/align.sh remove mRNA ${PREFIX} rrna
+
+bash remove_bacteria/script/align.sh remove rRNA_conserve ${PREFIX} protein_coding
+bash remove_bacteria/script/align.sh remove rRNA_tRNA ${PREFIX}  protein_coding
+bash remove_bacteria/script/align.sh remove mRNA ${PREFIX} protein_coding
+# repeat Ath_flower_1 Ath_flower_2 Ath_flower_3
+```
+
+## 6 Visualization
++ plot
+```bash
+cd remove_bacteria
+mkdir -p ../visuliaztion/plot/${PREFIX}
+
+# length
+bash script/pre_plot.sh ${PREFIX}
+Rscript script/length_hist.r rRNA_conserve ${PREFIX}
+Rscript script/length_hist.r rRNA_tRNA ${PREFIX}
+Rscript script/length_hist.r mRNA ${PREFIX}
+
+# CG
+bash script/pre_plot_CG.sh ${PREFIX}
+Rscript script/CG_hist.r rRNA_conserve ${PREFIX}
+Rscript script/CG_hist.r rRNA_tRNA ${PREFIX}
+Rscript script/CG_hist.r mRNA ${PREFIX}
+```
+
+## 7 Make report
++ Raw output
+```bash
+cd Ath
+mkdir -p raw_output/${PREFIX}
+
+# rrna
+bowtie2 -p 4 -a -t \
+  --end-to-end -D 20 -R 3 \
+  -N 0 -L 10 -i S,1,0.50 --np 0 \
+  --xeq -x index/ath_rrna \
+  -1 data/${PREFIX}/R1.fq.gz -2 data/${PREFIX}/R2.fq.gz \
+  -S raw_output/${PREFIX}/rrna.raw.sam \
+  2>&1 |
+  tee raw_output/${PREFIX}/rrna.bowtie2.log
+
+pigz -p 4 raw_output/${PREFIX}/rrna.raw.sam
+
+# mrna
+bowtie2 -p 24 -a -t \
+  --end-to-end -D 20 -R 3 \
+  -N 0 -L 10 -i S,1,0.50 --np 0 \
+  --xeq -x index/ath_protein_coding \
+  -1 data/${PREFIX}/R1.fq.gz -2 data/${PREFIX}/R2.fq.gz \
+  -S raw_output/${PREFIX}/mrna.raw.sam \
+  2>&1 |
+  tee raw_output/${PREFIX}/mrna.bowtie2.log
+
+pigz -p 24 raw_output/${PREFIX}/mrna.raw.sam
+```
+
+```bash
+cd Ath
+
+bash remove_bacteria/script/report.sh ${PREFIX}
+```
+
+## 8 NJU-seq(rrna)
++ Filter
+```bash
+PREFIX=Ath_flower_NC
+
+cd Ath
+mkdir -p temp/${PREFIX} output/${PREFIX}
+
+pigz -dcf stage_align/${PREFIX}/mRNA/rrna_align.sam.gz |
+  parallel --pipe --block 10M --no-run-if-empty --linebuffer --keep-order -j 4 '
+    awk '\''$6!="*"&&$7=="="{print $1 "\t" $3 "\t" $4 "\t" $6 "\t" $10}
+    '\'' |
+    perl NJU_seq/rrna_analysis/matchquality_judge.pl |
+    perl NJU_seq/rrna_analysis/multimatch_judge.pl
+  ' \
+  >temp/${PREFIX}/rrna.out.tmp
+
+parallel -j 4 "
+  perl NJU_seq/rrna_analysis/readend_count.pl \
+    NJU_seq/data/ath_rrna/{}.fa temp/${PREFIX}/rrna.out.tmp {} \
+    >output/${PREFIX}/rrna_{}.tsv
+  " ::: 25s 18s 5-8s
+# repeat Ath_flower_1 Ath_flower_2 Ath_flower_3
+```
++ Score
+```bash
+TISSUE=flower
+
+parallel -j 4 "
+  perl NJU_seq/rrna_analysis/score.pl \\
+    output/Ath_${TISSUE}_NC/rrna_{}.tsv \\
+    output/Ath_${TISSUE}_1/rrna_{}.tsv \\
+    output/Ath_${TISSUE}_2/rrna_{}.tsv \\
+    output/Ath_${TISSUE}_3/rrna_{}.tsv \\
+      >output/Ath_${TISSUE}_rrna_{}_scored.tsv
+  " ::: 25s 18s 5-8s
+```
+
+## 8 NJU-seq(mrna)
++ Extract reads can't be mapped to rRNA
+```bash
+PREFIX=Ath_flower_NC
+
+cd Ath
+bash NJU_seq/tool/extract_fastq.sh \
+  temp/${PREFIX}/rrna.out.tmp \
+  data/${PREFIX}/R1.fq.gz data/${PREFIX}/R1.mrna.fq.gz \
+  data/${PREFIX}/R2.fq.gz data/${PREFIX}/R2.mrna.fq.gz
+```
++ Align
+```bash
+bowtie2 -p 24 -a -t \
+  --end-to-end -D 20 -R 3 \
+  -N 0 -L 10 --score-min C,0,0 \
+  --xeq -x index/ath_protein_coding \
+  -1 data/${PREFIX}/R1.mrna.fq.gz -2 data/${PREFIX}/R2.mrna.fq.gz \
+  -S stage_align/${PREFIX}/mrna.new.sam \
+  2>&1 |
+  tee stage_align/${PREFIX}/mrna.new.bowtie2.log
+
+pigz -p 24 stage_align/${PREFIX}/mrna.new.sam
+```
++ Filter
+```bash
+# 双端测序数据匹配了两次，去重，转换为匹配一次
+gzip -dcf stage_align/${PREFIX}/mrna.new.sam.gz |
+  parallel --pipe --block 100M --no-run-if-empty --linebuffer --keep-order -j 24 '
+    awk '\''$6!="*"&&$7=="="{print $1 "\t" $3 "\t" $4 "\t" $6 "\t" $10}
+    '\'' |
+    perl NJU_seq/mrna_analysis/multimatch_judge.pl
+  ' | perl NJU_seq/mrna_analysis/multimatch_judge.pl \
+  >temp/${PREFIX}/mrna.out.tmp
+# bsub -q mpi -n 24 -J "flowerNC" "bash remove_bacteria/script/mrna_filter.sh ${PREFIX}"
+head -n 2 temp/${PREFIX}/mrna.out.tmp
+# E00517:615:HCJYHCCX2:3:1101:28239:1538  AT5G49540.1     508     12=     ATCTGTTGGGCT
+# E00517:615:HCJYHCCX2:3:1101:28239:1538  AT2G17305.1     213     12=     AGCCCAACAGAT
+
+# info
+## Download annotation file
+wget -O data/ath2.gff3.gz https://ftp.ensemblgenomes.ebi.ac.uk/pub/plants/release-55/gff3/arabidopsis_thaliana/Arabidopsis_thaliana.TAIR10.55.gff3.gz 
+
+gzip -dcf data/ath.gff3.gz |
+  awk '$3=="exon" {print $1 "\t" $4 "\t" $5 "\t" $7 "\t" $9}' \
+  >data/ath_exon.info
+head -n 2 data/ath_exon.info
+# 1       3631    3913    +       Parent=transcript:AT1G01010.1;Name=AT1G01010.1.exon1;constitutive=1;ensembl_end_phase=1;ensembl_phase=-1;exon_id=AT1G01010.1.exon1;rank=1
+# 1       3996    4276    +       Parent=transcript:AT1G01010.1;Name=AT1G01010.1.exon2;constitutive=1;ensembl_end_phase=0;ensembl_phase=1;exon_id=AT1G01010.1.exon2;rank=2
+
+cat temp/${PREFIX}/mrna.out.tmp |
+  parallel --pipe --block 100M --no-run-if-empty --linebuffer --keep-order -j 24 '
+    perl NJU_seq/mrna_analysis/dedup.pl \
+      --refstr "Parent=transcript:" \
+      --transid "AT" \
+      --info data/ath_exon.info
   ' |
-  tr " " "\t" | tsv-select --fields 2,1 > ${PREFIX}_hist.tsv
+  perl NJU_seq/mrna_analysis/dedup.pl \
+    --refstr "Parent=transcript:" \
+    --transid "AT" \
+    --info data/ath_exon.info \
+    >temp/"${PREFIX}"/mrna.dedup.tmp
+# bsub -q mpi -n 24 -J "flowerNC" "bash remove_bacteria/script/dedup.sh ${PREFIX}"
 
-(echo -e "reads_length\tRemove_number" && cat ${PREFIX}_hist.tsv) > tem&&
-  mv tem ${PREFIX}_hist.tsv
-
-perl script/tsv_join_plus.pl ../data/${PREFIX}/length_distribution.tsv ${PREFIX}_hist.tsv > tem&&
-  mv tem ../data/${PREFIX}/length_distribution.tsv
-
-echo -e "reads_length\tnumber\tgroup" > ../data/${PREFIX}/plot.tsv
-sed '1d' ../data/${PREFIX}/length_distribution.tsv | perl -ne'
-  chomp;
-  if (/^(\S+)\t(\S+)\t(\S+)/) {
-    my $reads_length = $1;
-    my $total_number = $2;
-    my $remove_number = $3;
-    my $keep_number = ( $total_number - $remove_number );
-    print "$reads_length\t$keep_number\tKeep\n";
-    print "$reads_length\t$remove_number\tRemove\n";
-  }
-' >> ../data/${PREFIX}/plot.tsv
+bash NJU_seq/mrna_analysis/almostunique.sh \
+  temp/${PREFIX}/mrna.dedup.tmp \
+  data/${PREFIX}/R1.mrna.fq.gz \
+  temp/${PREFIX} \
+  temp/${PREFIX}/mrna.almostunique.tmp
 ```
-```R
-library("ggplot2")
-DATA <- read.table("plot.tsv", header = TRUE, sep = "\t")
-
-ggplot(DATA, aes(reads_length, number, fill=group)) +
-  geom_bar(stat = "identity")+
-  xlim(9,70)+
-  labs(title = "Ath_flower_NC")+
-  theme(text=element_text(face = "bold"), axis.text=element_text(face = "bold"), plot.title = element_text(hjust=0.5))
-```
-
-
