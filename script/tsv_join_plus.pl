@@ -15,7 +15,7 @@ open( my $in_fh2, "<", $ARGV[1] );
 
 my %info1;
 while (<$in_fh1>) {
-    if ( ! (/^reads_length/)) {
+    if ( ! (/^reads_length|^CG_content/)) {
         chomp;
         my ( $dkey, $dvalue ) = split(/\t/, $_);
         $info1{$dkey} = $dvalue;
@@ -25,7 +25,7 @@ close $in_fh1;
 
 my %info2;
 while (<$in_fh2>) {
-    if ( ! (/^reads_length/)) {
+    if ( ! (/^reads_length|^CG_content/)) {
         chomp;
         my ( $dkey, $dvalue ) = split(/\t/, $_);
         $info2{$dkey} = $dvalue;
@@ -38,7 +38,7 @@ foreach ( keys %info2 ) {
     push @filekey, $_;
 }
 
-print "reads_length\tTotal_number\tRemove_number\tRemove_proportion\n";
+print "reads_length\tTotal_number\tKeep_number\tKeep_proportion\n";
 foreach my $key ( sort { $a <=> $b } keys %info1 ) {
     if ( grep { $key eq $_ } @filekey ) {
         my $remove_proportion = ( ( $info2{$key} / $info1{$key} ) * 100 );
