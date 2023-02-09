@@ -77,3 +77,7 @@ tsv-uniq -f 1 $1/output/${PREFIX}/total_remove_reads_info.tsv > $1/output/${PREF
 tsv-join --filter-file <(cut -d "," -f 1,2 ../../NJU_seq_analysis_ath/bacteria/Bacteria.assembly.collect.csv | tr "," "\t") -H --key-fields name --append-fields Organism_name $1/output/${PREFIX}/align_statistics.tsv | 
 tsv-select -H -f Organism_name --rest last > tem&&
   mv tem $1/output/${PREFIX}/align_statistics.tsv
+
+tsv-join --filter-file ../../NJU_seq_analysis_ath/bacteria/ASSEMBLY/statistics.tsv -H --key-fields name --append-fields Bacteria_CG_content_$1 $1/output/${PREFIX}/align_statistics.tsv |
+  tsv-select -f 1,2,3,4,5,8,6,7 > tem&&
+  mv tem $1/output/${PREFIX}/align_statistics.tsv
