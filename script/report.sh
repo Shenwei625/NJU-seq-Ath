@@ -66,7 +66,8 @@ for DIR in rRNA_conserve rRNA_tRNA mRNA;do
   ' >> visuliaztion/${PREFIX}_align_rate.tsv
 done
 
-echo -e "# ${PREFIX}" > visuliaztion/${PREFIX}_align_info.md
+echo "<div align=center>" > visuliaztion/${PREFIX}_align_info.md
+echo -e "# ${PREFIX}" >> visuliaztion/${PREFIX}_align_info.md
 
 # raw
 echo -e "## raw\n" >> visuliaztion/${PREFIX}_align_info.md
@@ -75,7 +76,7 @@ head -n 2 visuliaztion/${PREFIX}_align_rate.tsv |
 echo -e "\n" >> visuliaztion/${PREFIX}_align_info.md
 
 # rRNA_conserve
-for DIR in rRNA_conserve rRNA_tRNA mRNA;do
+for DIR in rRNA_conserve;do
     echo -e "## ${DIR}\n" >> visuliaztion/${PREFIX}_align_info.md
     (head -n 1 visuliaztion/${PREFIX}_align_rate.tsv && grep "^${DIR}" visuliaztion/${PREFIX}_align_rate.tsv) |
         mlr --itsv --omd cat >> visuliaztion/${PREFIX}_align_info.md
@@ -91,4 +92,24 @@ for DIR in rRNA_conserve rRNA_tRNA mRNA;do
     echo -e "\n" >> visuliaztion/${PREFIX}_align_info.md
 done
 
+# rRNA_tRNA mRNA
+for DIR in rRNA_tRNA mRNA;do
+    echo -e "## ${DIR}\n" >> visuliaztion/${PREFIX}_align_info.md
+    (head -n 1 visuliaztion/${PREFIX}_align_rate.tsv && grep "^${DIR}" visuliaztion/${PREFIX}_align_rate.tsv) |
+        mlr --itsv --omd cat >> visuliaztion/${PREFIX}_align_info.md
+    echo -e "\n" >> visuliaztion/${PREFIX}_align_info.md
+
+    head remove_bacteria/${DIR}/output/${PREFIX}/align_statistics.tsv |
+      tsv-select -e 2 |
+      mlr --itsv --omd cat >> visuliaztion/${PREFIX}_align_info.md
+    echo -e "\n" >> visuliaztion/${PREFIX}_align_info.md
+
+    echo '![]'"(./plot/${PREFIX}/${PREFIX}_${DIR}.png)" >> visuliaztion/${PREFIX}_align_info.md
+    echo -e "\n" >> visuliaztion/${PREFIX}_align_info.md
+    echo '![]'"(./plot/${PREFIX}/${PREFIX}_${DIR}_CG.png)" >> visuliaztion/${PREFIX}_align_info.md
+    echo -e "\n" >> visuliaztion/${PREFIX}_align_info.md
+done
+
 pandoc -i visuliaztion/${PREFIX}_align_info.md -o visuliaztion/${PREFIX}_align_info.html
+rm visuliaztion/${PREFIX}_align_info.md
+rm visuliaztion/${PREFIX}_align_rate.tsv

@@ -12,7 +12,7 @@ geom_line()+
 xlab("CG_content(%)")+
 scale_x_continuous(breaks = seq(25, 75, 5))+
 labs(title = LAB)+
-theme(text=element_text(face = "bold"), axis.text=element_text(face = "bold"), plot.title = element_text(hjust=0.5))
+theme(text=element_text(face = "bold", size = 8), axis.text=element_text(face = "bold", size = 8), plot.title = element_text(hjust=0.5))
 
 DIR <- paste(sep="", "../visuliaztion/plot/", args[2], "/", LAB, ".png")
-ggsave(file=DIR, width=7.5, height=5, dpi=300)
+ggsave(file=DIR, width=5, height=3.5, dpi=300)

@@ -59,6 +59,7 @@ cat ASSEMBLY/rsync.tsv |
 ```
 + Info
 ```bash
+# Bacteria
 echo -e "name\tBacteria_CG_content_rRNA_tRNA\tBacteria_CG_content_mRNA" > ASSEMBLY/statistics.tsv
 
 JOB=$(find ASSEMBLY -maxdepth 1 -mindepth 1 -type d | cut -d "/" -f 2 )
@@ -80,6 +81,25 @@ echo "===> $J"
         printf "%.2f%%\n", $CG_content;
       ' >> ASSEMBLY/statistics.tsv  
 done
+
+# Ath
+cd Ath
+
+#rrna
+cat data/ath_rrna.fa | faops count stdin | tail -n 1 |
+  perl -a -F"\t" -e '
+    my $CG_content = ((( @F[3] + @F[4] ) / @F[1] ) * 100 );
+    printf "%.2f%%\n", $CG_content;
+  '
+# 53.45%
+
+#mrna
+cat data/ath_protein_coding.fa | faops count stdin | tail -n 1 |
+  perl -a -F"\t" -e '
+    my $CG_content = ((( @F[3] + @F[4] ) / @F[1] ) * 100 );
+    printf "%.2f%%\n", $CG_content;
+  '
+# 41.54%
 ```
 
 ## 2 Remove rRNA conserve region
@@ -269,7 +289,7 @@ done
 ```
 
 ## 5 Align
-+ Different deletion stages
++ Different remove stages
 ```bash
 cd Ath
 PREFIX=Ath_flower_NC
@@ -352,7 +372,7 @@ cd Ath
 mkdir -p raw_output/${PREFIX}
 
 # rrna
-bowtie2 -p 4 -a -t \
+bowtie2 -p 24 -a -t \
   --end-to-end -D 20 -R 3 \
   -N 0 -L 10 -i S,1,0.50 --np 0 \
   --xeq -x index/ath_rrna \
@@ -361,7 +381,7 @@ bowtie2 -p 4 -a -t \
   2>&1 |
   tee raw_output/${PREFIX}/rrna.bowtie2.log
 
-pigz -p 4 raw_output/${PREFIX}/rrna.raw.sam
+pigz -p 24 raw_output/${PREFIX}/rrna.raw.sam
 
 # mrna
 bowtie2 -p 24 -a -t \
@@ -460,9 +480,6 @@ head -n 2 temp/${PREFIX}/mrna.out.tmp
 # E00517:615:HCJYHCCX2:3:1101:28239:1538  AT2G17305.1     213     12=     AGCCCAACAGAT
 
 # info
-## Download annotation file
-wget -O data/ath2.gff3.gz https://ftp.ensemblgenomes.ebi.ac.uk/pub/plants/release-55/gff3/arabidopsis_thaliana/Arabidopsis_thaliana.TAIR10.55.gff3.gz 
-
 gzip -dcf data/ath.gff3.gz |
   awk '$3=="exon" {print $1 "\t" $4 "\t" $5 "\t" $7 "\t" $9}' \
   >data/ath_exon.info
@@ -484,9 +501,49 @@ cat temp/${PREFIX}/mrna.out.tmp |
     >temp/"${PREFIX}"/mrna.dedup.tmp
 # bsub -q mpi -n 24 -J "flowerNC" "bash remove_bacteria/script/dedup.sh ${PREFIX}"
 
+# reads多次匹配,只保留R1匹配情况,reads单次匹配,直接保留
 bash NJU_seq/mrna_analysis/almostunique.sh \
   temp/${PREFIX}/mrna.dedup.tmp \
   data/${PREFIX}/R1.mrna.fq.gz \
   temp/${PREFIX} \
   temp/${PREFIX}/mrna.almostunique.tmp
+
+# 统计基因上不同位点作为起始点和停点出现的次数
+perl NJU_seq/mrna_analysis/count.pl \
+  temp/${PREFIX}/mrna.almostunique.tmp \
+  >temp/${PREFIX}/mrna.count.tmp
+# 基因名  停点位置(起始点+长度-2) 匹配reads最后三个碱基  作为起始位点出现次数 作为停点出现次数
+# AT5G59400.1     893     G       A       G       0       1
+# AT1G21080.3     787     G       A       A       0       1
+
+# 合并位于基因组相同位置的不同转录位点
+# 1       3631    3913    +       Parent=transcript:AT1G01010.1;Name=AT1G01010.1.exon1;constitutive=1;ensembl_end_phase=1;ensembl_phase=-1;exon_id=AT1G01010.1.exon1;rank=1(输入)
+gzip -dcf data/ath.gff3.gz |
+  awk '$3=="exon" {print $1 "\t" $4 "\t" $5 "\t" $7 "\t" $9}' |
+  perl NJU_seq/mrna_analysis/merge.pl \
+    --refstr "Parent=transcript:" \
+    --geneid "AT" \
+    --transid "AT" \
+    -i temp/${PREFIX}/mrna.count.tmp \
+    -o output/${PREFIX}/mrna.tsv
+# 染色体 位置 正负链 最后三个碱基 起始点次数 停点次数
+```
++ Calculate valid sequencing depth (average coverage).
+```bash
+parallel --keep-order -j 4 '
+  echo {} >>output/{}/mrna.cov
+  bash NJU_seq/presentation/seq_depth.sh \
+    temp/{}/mrna.almostunique.tmp \
+    output/{}/mrna.tsv \
+    >>output/{}/mrna.cov
+  ' ::: Ath_flower_NC Ath_flower_1 Ath_flower_2 Ath_flower_3
+```
++ Score
+```bash
+perl NJU_seq/mrna_analysis/score.pl \
+  output/Ath_flower_NC/mrna.tsv \
+  output/Ath_flower_1/mrna.tsv \
+  output/Ath_flower_2/mrna.tsv \
+  output/Ath_flower_3/mrna.tsv \
+  >output/Ath_flower_mrna_Nm_score.tsv
 ```
