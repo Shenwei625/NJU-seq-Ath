@@ -343,6 +343,11 @@ bash remove_bacteria/script/align.sh remove mRNA ${PREFIX} rrna
 bash remove_bacteria/script/align.sh remove rRNA_conserve ${PREFIX} protein_coding
 bash remove_bacteria/script/align.sh remove rRNA_tRNA ${PREFIX}  protein_coding
 bash remove_bacteria/script/align.sh remove mRNA ${PREFIX} protein_coding
+
+# common
+bash remove_bacteria/script/align_rRNA_mRNA.sh remove_align ${PREFIX} rRNA_conserve
+bash remove_bacteria/script/align_rRNA_mRNA.sh remove_align ${PREFIX} rRNA_tRNA
+bash remove_bacteria/script/align_rRNA_mRNA.sh remove_align ${PREFIX} mRNA
 # repeat Ath_flower_1 Ath_flower_2 Ath_flower_3
 ```
 
@@ -394,6 +399,9 @@ bowtie2 -p 24 -a -t \
   tee raw_output/${PREFIX}/mrna.bowtie2.log
 
 pigz -p 24 raw_output/${PREFIX}/mrna.raw.sam
+
+# common
+bash remove_bacteria/script/align_rRNA_mRNA.sh raw_output ${PREFIX}
 ```
 
 ```bash
@@ -526,7 +534,7 @@ gzip -dcf data/ath.gff3.gz |
     --transid "AT" \
     -i temp/${PREFIX}/mrna.count.tmp \
     -o output/${PREFIX}/mrna.tsv
-# 染色体 位置 正负链 最后三个碱基 起始点次数 停点次数
+# 染色体 位置 正负链 最后三个碱基 基因名称 起始点次数 停点次数
 ```
 + Calculate valid sequencing depth (average coverage).
 ```bash

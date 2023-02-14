@@ -4,7 +4,7 @@ use warnings;
 use autodie;
 
 =head1 NAME
-remove_sequence_with_N.pl   --Remove sequence with N
+    remove_sequence_with_N.pl   --Remove sequence with N
 =head1 SYNOPSIS
     perl remove_sequence_with_N.pl file.fa
 =cut
