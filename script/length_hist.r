@@ -4,7 +4,6 @@
 args <- commandArgs(T)
 library("ggplot2")
 FILE <- paste(sep="", args[1], "/filter/", args[2], "/plot.tsv")
-DATA <- read.table(FILE, header = TRUE, sep = "\t")
 LAB <- paste(sep="", args[2], "_", args[1])
 
 ggplot(DATA, aes(reads_length, number, fill=group)) +

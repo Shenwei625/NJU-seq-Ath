@@ -82,6 +82,9 @@ for DIR in rRNA_conserve;do
         mlr --itsv --omd cat >> visuliaztion/${PREFIX}_align_info.md
     echo -e "\n" >> visuliaztion/${PREFIX}_align_info.md
 
+    cat remove_align/${PREFIX}/${DIR}/common.tsv >> visuliaztion/${PREFIX}_align_info.md
+    echo -e "\n" >> visuliaztion/${PREFIX}_align_info.md
+
     head remove_bacteria/${DIR}/output/${PREFIX}/align_statistics.tsv |
       mlr --itsv --omd cat >> visuliaztion/${PREFIX}_align_info.md
     echo -e "\n" >> visuliaztion/${PREFIX}_align_info.md
@@ -97,6 +100,9 @@ for DIR in rRNA_tRNA mRNA;do
     echo -e "## ${DIR}\n" >> visuliaztion/${PREFIX}_align_info.md
     (head -n 1 visuliaztion/${PREFIX}_align_rate.tsv && grep "^${DIR}" visuliaztion/${PREFIX}_align_rate.tsv) |
         mlr --itsv --omd cat >> visuliaztion/${PREFIX}_align_info.md
+    echo -e "\n" >> visuliaztion/${PREFIX}_align_info.md
+
+    cat remove_align/${PREFIX}/${DIR}/common.tsv >> visuliaztion/${PREFIX}_align_info.md
     echo -e "\n" >> visuliaztion/${PREFIX}_align_info.md
 
     head remove_bacteria/${DIR}/output/${PREFIX}/align_statistics.tsv |

@@ -515,6 +515,7 @@ bash NJU_seq/mrna_analysis/almostunique.sh \
   data/${PREFIX}/R1.mrna.fq.gz \
   temp/${PREFIX} \
   temp/${PREFIX}/mrna.almostunique.tmp
+# bsub -q serial -n 2
 
 # 统计基因上不同位点作为起始点和停点出现的次数
 perl NJU_seq/mrna_analysis/count.pl \
@@ -538,20 +539,72 @@ gzip -dcf data/ath.gff3.gz |
 ```
 + Calculate valid sequencing depth (average coverage).
 ```bash
+TISSUE=flower
 parallel --keep-order -j 4 '
   echo {} >>output/{}/mrna.cov
   bash NJU_seq/presentation/seq_depth.sh \
     temp/{}/mrna.almostunique.tmp \
     output/{}/mrna.tsv \
     >>output/{}/mrna.cov
-  ' ::: Ath_flower_NC Ath_flower_1 Ath_flower_2 Ath_flower_3
+  ' ::: Ath_${TISSUE}_NC Ath_${TISSUE}_1 Ath_${TISSUE}_2 Ath_${TISSUE}_3
 ```
 + Score
 ```bash
 perl NJU_seq/mrna_analysis/score.pl \
-  output/Ath_flower_NC/mrna.tsv \
-  output/Ath_flower_1/mrna.tsv \
-  output/Ath_flower_2/mrna.tsv \
-  output/Ath_flower_3/mrna.tsv \
-  >output/Ath_flower_mrna_Nm_score.tsv
+  output/Ath_${TISSUE}_NC/mrna.tsv \
+  output/Ath_${TISSUE}_1/mrna.tsv \
+  output/Ath_${TISSUE}_2/mrna.tsv \
+  output/Ath_${TISSUE}_3/mrna.tsv \
+  >output/Ath_${TISSUE}_mrna_Nm_score.tsv
+```
+
+## 8 Statistics and Presentation
++ See the signature of Nm sites
+```bash
+cd Ath
+TISSUE=flower
+
+perl NJU_seq/presentation/signature_count.pl \
+  output/Ath_${TISSUE}_mrna_Nm_score.tsv \
+  output/Ath_${TISSUE}_mrna_signature.pdf
+```
+
++ End count hist(rrna)
+```bash
+mkdir visuliaztion/End_count_hist
+
+bash remove_bacteria/script/end_count_hist.sh ${TISSUE} rrna_5-8s
+bash remove_bacteria/script/end_count_hist.sh ${TISSUE} rrna_18s
+bash remove_bacteria/script/end_count_hist.sh ${TISSUE} rrna_25s
+```
+
++ Ath info
+```
+1       TAIR10  chromosome      1       30427671        .       .       .       ID=chromosome:1;Alias=Chr1,CP002684.1,NC_003070.9
+1       araport11       gene    3631    5899    .       +       .       ID=gene:AT1G01010;Name=NAC001;biotype=protein_coding;description=NAC domain containing protein 1 [Source:NCBI gene (formerly Entrezgene)%3BAcc:839580];gene_id=AT1G01010;logic_name=araport11
+1       araport11       mRNA    3631    5899    .       +       .       ID=transcript:AT1G01010.1;Parent=gene:AT1G01010;Name=NAC001-201;biotype=protein_coding;tag=Ensembl_canonical;transcript_id=AT1G01010.1
+1       araport11       five_prime_UTR  3631    3759    .       +       .       Parent=transcript:AT1G01010.1
+1       araport11       exon    3631    3913    .       +       .       Parent=transcript:AT1G01010.1;Name=AT1G01010.1.exon1;constitutive=1;ensembl_end_phase=1;ensembl_phase=-1;exon_id=AT1G01010.1.exon1;rank=1
+1       araport11       CDS     3760    3913    .       +       0       ID=CDS:AT1G01010.1;Parent=transcript:AT1G01010.1;protein_id=AT1G01010.1
+1       araport11       exon    3996    4276    .       +       .       Parent=transcript:AT1G01010.1;Name=AT1G01010.1.exon2;constitutive=1;ensembl_end_phase=0;ensembl_phase=1;exon_id=AT1G01010.1.exon2;rank=2
+1       araport11       CDS     3996    4276    .       +       2       ID=CDS:AT1G01010.1;Parent=transcript:AT1G01010.1;protein_id=AT1G01010.1
+1       araport11       exon    4486    4605    .       +       .       Parent=transcript:AT1G01010.1;Name=AT1G01010.1.exon3;constitutive=1;ensembl_end_phase=0;ensembl_phase=0;exon_id=AT1G01010.1.exon3;rank=3
+1       araport11       CDS     4486    4605    .       +       0       ID=CDS:AT1G01010.1;Parent=transcript:AT1G01010.1;protein_id=AT1G01010.1
+1       araport11       exon    4706    5095    .       +       .       Parent=transcript:AT1G01010.1;Name=AT1G01010.1.exon4;constitutive=1;ensembl_end_phase=0;ensembl_phase=0;exon_id=AT1G01010.1.exon4;rank=4
+1       araport11       CDS     4706    5095    .       +       0       ID=CDS:AT1G01010.1;Parent=transcript:AT1G01010.1;protein_id=AT1G01010.1
+1       araport11       exon    5174    5326    .       +       .       Parent=transcript:AT1G01010.1;Name=AT1G01010.1.exon5;constitutive=1;ensembl_end_phase=0;ensembl_phase=0;exon_id=AT1G01010.1.exon5;rank=5
+1       araport11       CDS     5174    5326    .       +       0       ID=CDS:AT1G01010.1;Parent=transcript:AT1G01010.1;protein_id=AT1G01010.1
+1       araport11       CDS     5439    5630    .       +       0       ID=CDS:AT1G01010.1;Parent=transcript:AT1G01010.1;protein_id=AT1G01010.1
+1       araport11       exon    5439    5899    .       +       .       Parent=transcript:AT1G01010.1;Name=AT1G01010.1.exon6;constitutive=1;ensembl_end_phase=-1;ensembl_phase=0;exon_id=AT1G01010.1.exon6;rank=6
+1       araport11       three_prime_UTR 5631    5899    .       +       .       Parent=transcript:AT1G01010.1
+```
++ Nm location
+```bash
+cd Ath
+TISSUE=flower
+mkdir -p visuliaztion/Nm_location
+
+pigz -dcf data/ath.gff3.gz | grep -v "#" | grep -v "chromosome" > data/ath.gff3
+perl remove_bacteria/script/where_is_my_Nm_site.pl data/ath.gff3 output/Ath_${TISSUE}_mrna_Nm_score.tsv | 
+  tsv-filter --str-ne 4:mRNA > visuliaztion/Nm_location/${TISSUE}_location.tsv
 ```
